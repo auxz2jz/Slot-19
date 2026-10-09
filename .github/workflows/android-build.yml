@@ -1,0 +1,51 @@
+name: Android APK candidate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out both platform histories without changing them
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android platform and build tools
+        run: |
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build Android APK and run unit tests
+        run: gradle -p android :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK exists and fingerprint
+        run: |
+          test -s android/app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p android-artifact
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/Video3DCapture-Android-v0.1.0-CANDIDATE.apk
+          cd android-artifact
+          sha256sum Video3DCapture-Android-v0.1.0-CANDIDATE.apk > SHA256SUMS.txt
+          ls -lh
+      - name: Upload Android APK candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: video3d-android-v0.1.0-candidate
+          path: android-artifact/
+          retention-days: 60
+          if-no-files-found: error
