@@ -1,67 +1,47 @@
-# Android recovery checkpoint — v0.1.0 source and APK candidate
+# Android Recovery Checkpoint — v0.2.0 Smart Auto Capture
 
-**As of:** 2026-10-08 PDT (GitHub Actions build occurred 2026-10-09 UTC)
+Updated 2026-10-08 PDT / GitHub build records are 2026-10-09 UTC. This file is the **current Android-only handoff**. Prior detailed v0.1.0 test evidence is archived verbatim at `android/history/ANDROID_V0.1.0_CAPTURE_REPORT.md`.
 
-## Exact independent Android status
-- Platform owner: Android worker/chat; owned files under `android/`, workflow `.github/workflows/android-build.yml`.
-- Version: **Android v0.1.0** / `versionCode 1` / package `com.auxz2jz.videogrammetry`.
-- **LAST USER-VERIFIED ANDROID BASELINE: NONE.**
-- **LATEST UNVERIFIED ANDROID CANDIDATE: v0.1.0.** Build success is NOT user verification.
-- **Exact code commit tested:** `fd7973c6a978136d1154872162f772127c5ecfd9`.
-- **Candidate preservation branch:** `backup/android-v0.1.0-ci-candidate`, from tested source commit above.
-- **Build:** GitHub Actions run [37891374599](https://github.com/auxz2jz/Slot-19/actions/runs/37891374599), **SUCCESS**. Tasks `testDebugUnitTest` and `assembleDebug` passed. APK file existence, archive upload, and SHA-256 check successful.
-- **GitHub artifact:** `video3d-android-v0.1.0-candidate` (artifact ID `11597604313`).
-- **APK inside artifact:** `Video3DCapture-Android-v0.1.0-CANDIDATE.apk`, 11,550,489 bytes.
-- **APK SHA-256:** `132a5780d575bee9d243c9adccb35a953b42ad998760ef3711eaac620988b639`.
-- **Android device install/manual test:** NOT YET PERFORMED BY USER. CameraX preview and sampling, MediaMetadataRetriever actual real-device video decoding and test ZIP export require physical testing.
+## Current status (do not confuse with Windows)
 
-## Features in candidate
-- Compose Android screen with `Enable Camera`, `Start Live Sampling`, `Stop Live Sampling`, `Choose Video`, `Test This Version`, `Frames Look Correct`, `Expected Behavior Failed`, `Export Test + Diagnostics`.
-- Live CameraX preview + ImageAnalysis samples up to 30 JPEGs ~1.2 seconds apart. Sampled frames come from raw analysis, not annotated UI.
-- Video importer uses Android document picker and MediaMetadataRetriever; samples up to 40 JPEGs ~1 second apart, max width 1280; keeps original recording untouched.
-- Isolated app-private capture runs, JPEG dimensions/hash verification, `manifest.json`, `result.json`, `events.jsonl`, bounded global action trace, user testing result, redacted diagnostic ZIP.
-- No quality/overlap keyframe selection, 3D reconstruction, mesh, texture, laser, or engine integrations yet.
+- Repository: `auxz2jz/Slot-19`. Governing instructions: `auxz2jz/master-instruction-library` and repo `AGENTS.md`.
+- Platform: **Android**; owned source `android/`, Android-only GitHub Actions workflow. No edits to Windows source or windows-specific documentation from Android feature work.
+- **LAST USER-VERIFIED ANDROID BASELINE: v0.1.0 for the *capture workflows*** (live camera sample frames and recorded-video extraction/preview; NO 3D reconstruction). The user's guided live run marked PASS and the user explicitly said the final extracted frame from recorded video looked fine. Preservation branch: `backup/android-v0.1.0-user-verified-capture`, exact source commit `fd7973c6a978136d1154872162f772127c5ecfd9`. v0.1 APK SHA-256: `132a5780d575bee9d243c9adccb35a953b42ad998760ef3711eaac620988b639`. Live diagnostic run 30/30 saved JPEGs with manual PASS; recorded-video run 40/40 saved JPEGs; user separately confirmed visible recorded image. Both diagnostic ZIPs were structurally valid, with no capture error reported.
+- **LATEST UNVERIFIED ANDROID CANDIDATE: v0.2.0**, `versionCode 2`, `versionName 0.2.0`, package `com.auxz2jz.videogrammetry`. Candidate exact tested source commit `21cc221cdd4421e3ee17c8167b970486cb38f365`; preserved branch `backup/android-v0.2.0-smart-ci-candidate`.
+- GitHub Actions `37894898716` SUCCESS — `testDebugUnitTest` and `assembleDebug` both PASS, artifact ZIP checksum generated and APK uploaded. Build URL: https://github.com/auxz2jz/Slot-19/actions/runs/37894898716
+- Artifact name `video3d-android-v0.2.0-candidate`, artifact ID `11599926676`. APK filename `Video3DCapture-Android-v0.2.0-CANDIDATE.apk`; APK bytes `11550489`; SHA-256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`. Artifact ZIP and APK hash checked against embedded `SHA256SUMS.txt` (PASS).
+- **Android v0.2.0 has not been physically tested or user-verified.** No automatic-photo camera test, useful-view selection test, JPEG color/orientation/FOV test, or photo-coverage test performed on user's device. The v0.1.0 verified capture baseline is never overwritten merely by v0.2.0 build success.
 
-## Build/debug history
-1. Workflow run `37891046767`: FAILED in upstream Android SDK setup action (obsolete `tools` package), before app compile. Resolved by using preinstalled SDK.
-2. Workflow run `37891097406`: FAILED Kotlin compilation on missing `androidx.activity.compose.setContent` import. Added exact missing import.
-3. Workflow run `37891374599`: SUCCESS, Android unit tests + APK assembled and uploaded.
-No speculative rewrites were used; this is not a repeated two-failure approach.
+## Implementation / v0.2.0 feature
 
-## Windows preservation
-- Historical Windows source, tests and root Windows project-memory/checkpoint file blob hashes unchanged during this Android work.
-- Windows pre-Android protected snapshot: `backup/pre-android-windows-v0.1.0` at `aaec898cf2fadf95760aaedc436d0f7062bd7fbe`.
-- Windows v0.1.0 source candidate remains unverified by user; Android APK does not replace it.
-- See `windows/OWNERSHIP.md` and `shared/`.
+**Three capture modes, not replacements:** (1) Original `Start Live Sampling` (up to 30 fixed-interval camera frames), (2) `Choose Video` (up to 40 fixed-interval imported video frames, with progressive saved-frame preview now visible during import), (3) new `Start Smart Auto Capture` / `Stop Smart Auto Capture`.
 
-## Files/results already received
-- No user Android device diagnostics, video samples or visual confirmations received.
-- Android GitHub workflow results and APK artifact identified above.
+The new smart mode uses CameraX ImageAnalysis at approximately 350ms intervals to evaluate a lightweight 64x48 grayscale thumbnail. `SmartFrameSelector.kt` checks mean brightness, spatial-edge sharpness proxy, stability between frames, image-change estimate since last accepted photo, 1.8s minimum spacing, plus estimated possible lost overlap. It displays simple panorama-inspired operator feedback and a **view-change progress bar**; it does NOT measure camera pose, degrees, distance, true geometric image overlap, or object-complete coverage.
+
+The optional CameraX **ImageCapture** use case requests a full-resolution still JPEG after the algorithm accepts a new view; saved JPG is not an overlay screenshot and is not re-compressed. `ScanRun.saveCapturedJpeg` records file size, dimensions, SHA256, time and score metrics; an automatic action is PASS only after a real decodable file is present. Up to 30 smart photos per run. Smart use-case binding failure should not prevent the original two capture modes, but that fallback is not yet physically device-tested.
+
+The Compose preview shows the latest saved frame at reduced display resolution to prevent huge Bitmap memory use, while saved full-resolution JPEG remains intact. Still photos may contain EXIF rotation metadata that needs device verification. Existing guided `Test This Version` result semantics and diagnostics ZIP remain; new smart decisions emit rate-limited `FRAME_DECISION` events and saved-frame validation.
+
+## Known limitations, risks, and diagnostic gaps
+
+- Quality/novelty heuristics are **experimental**, must not be interpreted as ORB-inlier/RANSAC verified overlap or reliable panorama direction. Smooth or repetitive objects and camera exposure changes can confuse the selector; tests on different backgrounds are essential.
+- Additional CameraX ImageCapture use case may not be compatible with every device/camera combination. Disable that third mode if its binding fails, rather than regress legacy capture. Needs physical test.
+- v0.2.0 is still a **capture-only** app; no sparse point cloud, SfM, mesh, texture, laser or 3D reconstruction engine.
+- Live v0.1 output had square 1088x1088 sample dimensions; no assumption of complete field of view. Smart full-res actual aspect ratio and EXIF orientation are unverified.
+- Diagnostic ZIP includes export-start events but may not include its own export-completion event, because that event is written after closing ZIP. Historical known gap; do not misreport ZIP failure.
+- The smart guide uses the existing latest-run manual pass/fail; **not a complete spatial-coverage analysis**. Expected Behavior Failed must remain selectable.
+- Android GitHub Actions build uses debug signing; the certificate may differ from a previously installed candidate. If upgrading fails, export diagnostics and preserve desired app data BEFORE uninstalling the old APK, as uninstall deletes app-private capture runs.
+- No user device diagnostics exist yet for v0.2.0.
+
+## Build/debug and tests
+
+- Initial v0.1 build SDK setup and missing `setContent` import problems are archived; v0.1 user-tested capture baseline is preserved.
+- v0.2 tests added in `SmartFrameSelectorTest.kt` for first-frame, duplicate rejection, motion/stabilization, too-dark/too-bright/soft image rejection, brightness compensation, capture cooldown and bounded progress; original `FramePolicyTest.kt` retained. GitHub Actions ran JVM tests and `assembleDebug` successfully.
+- A smart-capture error cannot silently yield PASS after an earlier successful frame: `smartHadError` forces failure. Preview display decode downsampled separately from full-size photo.
+- No real camera/Android instrumentation test in CI; correctness of actual full-resolution photos and selection behavior remains USER TEST PENDING.
 
 ## Exact next action
-**The user installs Android v0.1.0 candidate on a supported device** and exercises: camera permission, live preview, Start/Stop Live Sampling, Choose Video, inspection of saved frame orientation/colors, Test This Version (manual PASS or FAIL), and Export Test + Diagnostics. User sends failures/report. Confirm physical user-verified baseline only after explicit user testing and confirmation. Then address first real failures or plan intelligent keyframe selection. Do NOT begin laser or PC engine work here.
 
-## Device test evidence received — 2026-10-09 UTC
+Install v0.2.0 on Android phone (safely preserving v0.1 data). Check `Start Live Sampling` and `Choose Video` still behave correctly. Test `Start Smart Auto Capture` on a stationary object: first hold still, then move gradually to a new angle and hold again. Observe guidance/progress and number of *actual validated full-resolution photos*. Try leaving camera still (should not accumulate many identical photos), then poor lighting/fast movement (should warn or decline). `Stop Smart Auto Capture`, inspect saved latest-photo appearance, choose manual PASS or `Expected Behavior Failed` via `Test This Version`, export diagnostics and share results.
 
-Two user-uploaded Android v0.1.0 diagnostic ZIPs were inspected and found to be structurally valid (ZIP archive integrity checked); neither includes original source images/videos. They report no camera processing or decoder ERROR events. **The ZIPs document in-app output validation; they do not independently contain saved JPG bytes for external image/geometry verification.**
-
-### Live CameraX run
-- Submitted diagnostic ZIP: `Android-v0.1.0-test-diagnostics.zip`, SHA-256 `5c10e16b58e31fa712010d1d702b520c3636c6efcba210b6a0a7a51be066dcf2`.
-- Run ID `20261009T062629Z_0565430e-f`; 30/30 frames; each JPEG recorded as 1088×1088. First-to-last sampled span 35.284 s; source timestamp interval mean ~1216.7 ms (range 1201–1242).
-- Saved-run result `PASS`, outputValidated=true, manifest 30 entries. Guided `TEST_RESULT=PASS`, automatic validation=true, `visualResultSource=MANUAL_PASS`, user selected **Frames Look Correct**.
-- Treat live frame capture and user-reported visual acceptability as **positively tested**, limited to this run. No evidence about full scene coverage, accurate camera intrinsics, geometry, or reconstruction. Square aspect ratio warrants explicit crop/coverage review before any quality claims.
-
-### Recorded video run
-- Submitted diagnostic ZIP: `Android-v0.1.0-test-diagnostics (1).zip`, SHA-256 `e57b69c526001c87baa8b93ef6d463d7c74eea3e20f9c63c02d6e9d5d626b8b1`.
-- Run ID `20261009T062920Z_06fedd2f-2`; 40/40 decoded frames; each JPEG 720×1280; first-to-last requested positions span 39.000 s, with 1 s spacing; `unavailableFrames=0`.
-- Saved-run result `PASS`, outputValidated=true; **no `test_results.json` or manual visual confirmation exists for this recorded-video run**. Automated recorded-video extraction is positively tested; visual quality remains unverified.
-
-### Found diagnostics limitation
-- Each ZIP contains `USER_ACTION EXPORT_TEST_AND_DIAGNOSTICS` and `OPERATION_START DIAGNOSTIC_EXPORT` but not `EXPORT_RESULT`. Both are valid ZIPs, supporting that actual user-driven export completed. In v0.1.0 the completion event is logged **after** closing the ZIP, so it is not inside its own snapshot. Fix in a future small, testable diagnostic update; do not change successful capture behavior merely to solve the reporting gap.
-- Video input sampling is fixed at max 40 frames. A 40-frame pass confirms the first requested 39-second span, not the entire duration if the source video is longer.
-- App-generated JPGs are not in either export; raw pixel/color/sharpness, FOV and scene overlap cannot be independently verified here.
-
-### Baseline classification and exact next action
-- **Last fully user-verified Android release baseline remains NONE**, pending the user's confirmation that both live and recorded modes look correct. Live in-app guided test has manual PASS; recorded-video has automatically verified capture only.
-- **Candidate remains Android v0.1.0** at tested code commit `fd7973c6a978136d1154872162f772127c5ecfd9`; protected backup branch `backup/android-v0.1.0-ci-candidate`; APK SHA-256 unchanged. Do not rebuild or increment version for documentation-only test recording.
-- Next: request/receive the user's visual assessment of recorded video output and whether 1088×1088 live captures crop content; optionally test a separate short video to evaluate sampling range. Once user confirms both core capture workflows, mark that scope as last user-verified baseline. For a future candidate, fix export self-diagnostics with a targeted regression test and add coverage-aware frame selection. Windows-owned files remain untouched.
+Only mark v0.2.0 verified after user says it works. If regression, return to preserved verified v0.1.0 source/APK and make smallest evidence-based correction. Windows and Slot-8 source remain untouched.
