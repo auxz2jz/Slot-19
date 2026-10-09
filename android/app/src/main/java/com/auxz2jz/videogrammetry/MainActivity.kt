@@ -130,6 +130,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var geometryAnalyzing by mutableStateOf(false)
         private set
+    var sparseAnalyzing by mutableStateOf(false)
+        private set
+    var sparseProgress by mutableStateOf(0f)
+        private set
+    var sparseMessage by mutableStateOf("No sparse two-view analysis yet")
+        private set
+    var sparseAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
+        private set
     var geometryProgress by mutableStateOf(0f)
         private set
     var geometrySummary by mutableStateOf("Geometric feature analysis has not run on the latest capture")
@@ -141,7 +150,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
             else -> videoOptions
         }
     fun chooseSettingsMode(mode: String) {
-        if (!liveSampling && !smartSampling && !importing && !geometryAnalyzing &&
+        if (!liveSampling && !smartSampling && !importing && !geometryAnalyzing && !sparseAnalyzing &&
             mode in setOf("LIVE", "VIDEO", "SMART")) settingsMode = mode
     }
     fun setTargetFps(value: Double) {
@@ -242,7 +251,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun startLive() {
-        if (!cameraBound || importing || liveSampling || smartSampling || geometryAnalyzing) {
+        if (!cameraBound || importing || liveSampling || smartSampling || geometryAnalyzing || sparseAnalyzing) {
             status = "Camera is not ready or capture already active"
             return
         }
@@ -308,7 +317,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     /** Third capture mode; uses actual CameraX full-resolution JPEG ImageCapture. */
     fun startSmart() {
         if (!cameraBound || !smartAvailable || smartImageCapture == null ||
-            smartSampling || liveSampling || importing || geometryAnalyzing) {
+            smartSampling || liveSampling || importing || geometryAnalyzing || sparseAnalyzing) {
             status = "Smart capture unavailable or another mode is already running"
             return
         }
@@ -493,7 +502,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun importVideo(uri: Uri) {
-        if (importing || liveSampling || smartSampling || geometryAnalyzing) {
+        if (importing || liveSampling || smartSampling || geometryAnalyzing || sparseAnalyzing) {
             status = "Finish current capture first"
             return
         }
@@ -559,6 +568,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private fun finishUi(run: ScanRun, success: Boolean) {
         ui {
             currentRun = run
+            sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            sparseMessage = "No sparse two-view analysis for this capture"
             savedRuns = repository.completedRunCount()
             active = null
             visibleCount = run.frameCount
@@ -575,7 +586,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     /** Pairwise feature analysis is opt-in and never modifies captured JPEGs or run PASS. */
     fun analyzeLatestRunGeometry() {
-        if (geometryAnalyzing || importing || liveSampling || smartSampling) {
+        if (geometryAnalyzing || sparseAnalyzing || importing || liveSampling || smartSampling) {
             status = "Finish capture before analyzing geometry"
             return
         }
@@ -613,6 +624,69 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 }
             } finally {
                 ui { geometryAnalyzing = false }
+            }
+        }
+    }
+
+    /** Experimental relative two-view pose, unknown scale; no validated full scan. */
+    fun analyzeSparseTwoView() {
+        if (sparseAnalyzing || geometryAnalyzing || importing ||
+            liveSampling || smartSampling) {
+            status = "Finish other captures/analyses before sparse 3D"
+            return
+        }
+        val run = currentRun
+        if (run == null || !run.isClosed || run.frameCount < 2) {
+            status = "At least two saved frames are required"
+            return
+        }
+        sparseAnalyzing = true
+        sparseAvailable = false
+        sparseProgress = 0f
+        sparseMessage = "Testing bounded two-view camera poses..."
+        geometryWorker.execute {
+            try {
+                val result = SparseTwoViewAnalyzer().analyze(run) { done, total ->
+                    ui {
+                        sparseProgress = if (total == 0) 0f else done.toFloat()/total
+                        sparseMessage = "Evaluated " + done + " / " + total +
+                            " candidate view pairs"
+                    }
+                }
+                ui {
+                    val success = result.optString("status") == "SPARSE_CANDIDATE"
+                    sparseAvailable = success &&
+                        File(run.directory,"sparse_two_view.ply").isFile()
+                    sparseMessage = if (success)
+                        "Experimental cloud: " + result.optInt("pointCount") +
+                            " points from two views. Unknown scale; not a finished 3D model."
+                    else "INCONCLUSIVE: no pair passed parallax and reprojection checks. See diagnostic ZIP."
+                    status = "Sparse pose analysis " + result.optString("status") +
+                        " — export report or point cloud when available"
+                }
+            } catch(ex:Exception) {
+                ui {
+                    sparseMessage = "Sparse 3D FAILED: " + ex.javaClass.simpleName +
+                        " — saved capture untouched. Export diagnostics."
+                    status = sparseMessage
+                }
+            } finally {
+                ui { sparseAnalyzing = false }
+            }
+        }
+    }
+
+    fun exportSparsePly(uri: Uri) {
+        val run = currentRun ?: return
+        if (sparseAnalyzing || geometryAnalyzing || liveSampling || smartSampling || importing)
+            return
+        worker.execute {
+            try {
+                val size = repository.exportSparsePly(run, uri)
+                ui { status = "Experimental sparse PLY exported (" + size +
+                    " bytes, arbitrary units)" }
+            } catch(ex:Exception) {
+                ui { status = "Sparse PLY export failed: " + ex.javaClass.simpleName }
             }
         }
     }
@@ -681,6 +755,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val videoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) coordinator.importVideo(uri) }
+    val plyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if (uri != null) coordinator.exportSparsePly(uri) }
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -714,11 +791,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.4.0 CANDIDATE — ORB/RANSAC geometric pair analysis")
+            Text("Android v0.5.0 CANDIDATE — Experimental two-view sparse 3D")
             Text("Keep the object stationary; move the phone slowly around it.")
             val settings = coordinator.editingOptions
             val editingAllowed = !coordinator.liveSampling && !coordinator.smartSampling &&
-                !coordinator.importing && !coordinator.geometryAnalyzing
+                !coordinator.importing && !coordinator.geometryAnalyzing && !coordinator.sparseAnalyzing
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Capture settings — choose which mode to configure",
@@ -772,7 +849,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Button(onClick = { coordinator.stopLive() }) { Text("Stop Live Sampling") }
                 } else {
                     Button(onClick = { coordinator.startLive() },
-                        enabled = coordinator.cameraBound && !coordinator.importing && !coordinator.smartSampling && !coordinator.geometryAnalyzing) {
+                        enabled = coordinator.cameraBound && !coordinator.importing && !coordinator.smartSampling && !coordinator.geometryAnalyzing && !coordinator.sparseAnalyzing) {
                         Text("Start Live Sampling")
                     }
                 }
@@ -832,17 +909,45 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Text(coordinator.geometrySummary)
                 }
             }
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Experimental sparse 3D — two views",
+                        style = MaterialTheme.typography.titleMedium)
+                    Text("Finds relative camera pose and triangulates a small point cloud. Intrinsics are estimated; geometry has arbitrary scale, and background can dominate.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { coordinator.analyzeSparseTwoView() },
+                        enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
+                            !coordinator.liveSampling && !coordinator.smartSampling &&
+                            !coordinator.importing && !coordinator.geometryAnalyzing &&
+                            !coordinator.sparseAnalyzing) {
+                        Text(if (coordinator.sparseAnalyzing) "Analyzing two-view pose..."
+                            else "Analyze Sparse 3D — Two Views")
+                    }
+                    if (coordinator.sparseAnalyzing) LinearProgressIndicator(
+                        progress = { coordinator.sparseProgress },
+                        modifier = Modifier.fillMaxWidth())
+                    Text(coordinator.sparseMessage)
+                    Button(onClick = {
+                        plyPicker.launch("Android-v0.5.0-sparse-two-view.ply")
+                    }, enabled = coordinator.sparseAvailable &&
+                        !coordinator.sparseAnalyzing && !coordinator.geometryAnalyzing &&
+                        !coordinator.importing && !coordinator.liveSampling &&
+                        !coordinator.smartSampling) {
+                        Text("Export Sparse PLY — Experimental")
+                    }
+                }
+            }
             Button(onClick = { showGuide = true },
                 enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.4.0-last-run-diagnostics.zip")
+                exportPicker.launch("Android-v0.5.0-last-run-diagnostics.zip")
             }, enabled = latest != null && latest.isClosed && !coordinator.geometryAnalyzing) {
                 Text("Export Test + Diagnostics")
             }
             Button(onClick = {
-                historyPicker.launch("Android-v0.4.0-ALL-run-comparison.zip")
+                historyPicker.launch("Android-v0.5.0-ALL-run-comparison.zip")
             }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
                 !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Export ALL Runs + FPS Comparison")
@@ -856,7 +961,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
 
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.4.0") },
+        title = { Text("Test This Version — v0.5.0") },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
             "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
             "when the image is steady, sharp and sufficiently different.\n\n" +
@@ -867,7 +972,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "4. Try the same stationary object at 0.5, 1, 2 and 3 FPS using the rate slider, then Export ALL Runs + FPS Comparison. " +
             "Look for useful sharp views and sufficient overlap; higher FPS alone is not a PASS. " +
             "5. After a capture, tap Analyze Latest Run — ORB Geometry and inspect matched-pair counts. " +
-            "A low match count is not a capture-file failure; a high count is not a reconstructed model.") },
+            "A low match count is not a capture-file failure; a high count is not a reconstructed model. " +
+            "6. Tap Analyze Sparse 3D — Two Views. If a cloud passes checks, Export Sparse PLY. " +
+            "Inspect it separately; scale and camera calibration are not established.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
