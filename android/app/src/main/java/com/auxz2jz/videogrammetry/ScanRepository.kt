@@ -62,14 +62,18 @@ class ScanRepository(private val context: Context) {
     fun exportAllRunDiagnostics(uri: Uri): Int {
         val runs = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
             ?.sortedBy { it.name } ?: emptyList()
-        require(runs.isNotEmpty()) { "No completed runs" }
+        val calibrationLog=File(context.filesDir,"camera_calibration/events.jsonl")
+        require(runs.isNotEmpty() || calibrationLog.isFile) {
+            "Capture a run OR attempt checkerboard calibration before exporting history"
+        }
         val files = listOf("manifest.json", "result.json", "events.jsonl",
             "test_results.json", "test_report.txt",
             "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
             "sparse_report.json", "sparse_last_failure.json",
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
-            "object_focus_selection.json", "object_focus_last_failure.json")
+            "object_focus_selection.json", "object_focus_last_failure.json",
+            "early_object_focus_selection.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -124,7 +128,8 @@ class ScanRepository(private val context: Context) {
                 }
                 val calDir = File(context.filesDir, "camera_calibration")
                 for (name in listOf("last_checkerboard.json",
-                    "last_attempt.json", "events.jsonl")) {
+                    "last_attempt.json", "events.jsonl",
+                    "calibration_in_progress.json")) {
                     val source = File(calDir,name)
                     if (source.isFile) add("calibration/"+name,source.readBytes())
                 }
@@ -214,7 +219,8 @@ class ScanRepository(private val context: Context) {
             "sparse_report.json", "sparse_last_failure.json",
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
-            "object_focus_selection.json", "object_focus_last_failure.json")
+            "object_focus_selection.json", "object_focus_last_failure.json",
+            "early_object_focus_selection.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)

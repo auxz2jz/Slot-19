@@ -1,6 +1,7 @@
 package com.auxz2jz.videogrammetry
 
 import android.Manifest
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -72,6 +73,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         capture = CaptureCoordinator(this)
         setContent { CaptureScreen(capture) }
+    }
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Normal phone rotation must NOT destroy active frame extraction,
+        // calibration or geometry workers and must NOT reset their progress.
+        capture.onConfigurationChanged(newConfig.orientation)
     }
     override fun onDestroy() {
         capture.shutdown()
@@ -153,6 +160,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var sparseAvailable by mutableStateOf(
         currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
         private set
+    var earlyObjectSelected by mutableStateOf(
+        currentRun?.let { File(it.directory,"early_object_focus_selection.json").isFile() } ?: false)
+        private set
     var objectFocusAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
         private set
@@ -172,7 +182,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var calibrationProgress by mutableStateOf(0f)
         private set
-    var calibrationStatus by mutableStateOf("No camera calibration measured yet")
+    var calibrationStatus by mutableStateOf(
+        if(checkerboardCalibrator.interruptedPreviousRun())
+            "Previous calibration stopped unexpectedly; export ALL Runs + Calibration Diagnostics before retrying."
+        else "No camera calibration measured yet")
         private set
 
     var geometryProgress by mutableStateOf(0f)
@@ -209,9 +222,30 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
     val latestRun: ScanRun? get() = currentRun
+    val hasCalibrationHistory: Boolean
+        get() = File(activity.filesDir,"camera_calibration/events.jsonl").isFile
 
     private fun ui(action: () -> Unit) {
         if (!disposed) activity.runOnUiThread { if (!disposed) action() }
+    }
+
+    fun onConfigurationChanged(orientation: Int) {
+        val phase=when {
+            importing -> "VIDEO_IMPORT"
+            calibrating -> "CHECKERBOARD_CALIBRATION"
+            geometryAnalyzing -> "ORB_GEOMETRY"
+            sparseAnalyzing -> "SPARSE_3D"
+            thirdViewAnalyzing -> "THIRD_VIEW"
+            objectFocusWorking -> "OBJECT_FOCUS"
+            liveSampling -> "LIVE_CAMERA"
+            smartSampling -> "SMART_CAMERA"
+            else -> "IDLE"
+        }
+        currentRun?.event("STATE_TRANSITION","DEVICE_ORIENTATION_CHANGED",
+            JSONObject().put("orientation",orientation).put("activePhase",phase)
+                .put("operationPreserved",true))
+        // CameraX PreviewView resizes/reorients with the existing view and display.
+        // No unbindAll()/shutdown on orientation change.
     }
 
     fun bindCamera(view: PreviewView) {
@@ -219,6 +253,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         future.addListener({
             try {
                 val cameraProvider = future.get()
+                if (calibrating || disposed) return@addListener
                 provider = cameraProvider
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder()
@@ -605,6 +640,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         ui {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            earlyObjectSelected = File(run.directory,"early_object_focus_selection.json").isFile()
             objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
@@ -693,14 +729,30 @@ class CaptureCoordinator(private val activity: MainActivity) {
                             " candidate view pairs"
                     }
                 }
+                val early = if(result.optString("status")=="SPARSE_CANDIDATE" &&
+                    File(run.directory,"early_object_focus_selection.json").isFile()) {
+                    runCatching {
+                        ui { sparseMessage="Detecting object-priority ORB features inside your two selected boxes..." }
+                        SparseTwoViewAnalyzer().analyzeEarlySelectedObject(run)
+                    }.onFailure { error ->
+                        run.event("ERROR","EARLY_OBJECT_RECONSTRUCTION",
+                            JSONObject().put("errorType",error.javaClass.simpleName))
+                    }.getOrNull()
+                } else null
                 ui {
                     val success = result.optString("status") == "SPARSE_CANDIDATE"
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
-                    objectFocusAvailable = false
-                    objectFocusMessage = if(success)
-                        "Ready to select the object in both saved photos"
+                    objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+                    objectFocusMessage = if(early!=null)
+                        early.optString("status") + ": " +
+                        early.optInt("objectCandidatePoints") +
+                        " independently reconstructed ROI points; different relative coordinate frame from full scene."
+                        else if (earlyObjectSelected)
+                            "Object-priority reconstruction inconclusive or failed. Full-scene PLY remains available. Export diagnostics."
+                        else if(success)
+                            "Optional: select object in both photos after reconstruction"
                         else "No sparse points available for object focus"
                     sparseMessage = if (success)
                         "Experimental cloud: " + result.optInt("pointCount") +
@@ -771,6 +823,45 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 "MODE_MOVE","RESET_VIEW","CREATE_REQUEST")) {
             currentRun?.event("USER_ACTION","OBJECT_FOCUS_UI_"+action,
                 JSONObject().put("photoNumber",step))
+        }
+    }
+
+    /** First select real saved object views BEFORE feature extraction/3D. */
+    fun earlyObjectSourcePhotos(): Pair<File,File>? {
+        if(sparseAnalyzing || geometryAnalyzing || thirdViewAnalyzing ||
+            importing || liveSampling || smartSampling || calibrating ||
+            objectFocusWorking) {
+            objectFocusMessage="Finish the current task before choosing an object"
+            return null
+        }
+        val run=currentRun ?: return null
+        return try {
+            val photos=ObjectFocusProcessor().sourcePhotosBeforeSparse(run)
+            run.event("USER_ACTION","OPEN_EARLY_OBJECT_SELECTOR")
+            photos
+        } catch(ex:Exception) {
+            objectFocusMessage="Complete frame extraction first: "+
+                ex.javaClass.simpleName
+            null
+        }
+    }
+
+    fun saveEarlyObjectFocus(first:FocusRect,second:FocusRect) {
+        val run=currentRun ?: return
+        if(importing || sparseAnalyzing || geometryAnalyzing || calibrating ||
+            liveSampling || smartSampling || thirdViewAnalyzing)return
+        try {
+            val result=ObjectFocusProcessor().saveBeforeSparse(run,first,second)
+            earlyObjectSelected=true
+            objectFocusMessage="Object selected in both photos BEFORE 3D. Tap Analyze Sparse 3D to build full-scene and independent object-priority clouds."
+            status="Early object boxes saved for frames "+
+                result.getJSONArray("sourcePair").getInt(0)+" and "+
+                result.getJSONArray("sourcePair").getInt(1)
+        } catch(ex:Exception) {
+            objectFocusMessage="Could not save early object selection: "+
+                ex.javaClass.simpleName
+            run.event("ERROR","EARLY_OBJECT_SELECTION",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
         }
     }
 
@@ -906,7 +997,13 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
         calibrating = true
         calibrationProgress = 0f
-        calibrationStatus = "Finding 9 x 6 inner corners in selected images..."
+        calibrationStatus = "Preparing calibration independently of imported video..."
+        // Stop unused CameraX buffers during native OpenCV calibration.
+        // No active capture is permitted by the checks above.
+        unbindCamera()
+        val calStart=System.currentTimeMillis()
+        currentRun?.event("OPERATION_START","CHECKERBOARD_CALIBRATION",
+            JSONObject().put("selectedImages",images.size))
         calibrationWorker.execute {
             try {
                 val report = checkerboardCalibrator.calibrate(images) { done,total ->
@@ -925,9 +1022,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     status = "Checkerboard report saved; Export ALL Runs includes it."
                 }
             } catch(ex:Exception) {
+                currentRun?.event("ERROR","CHECKERBOARD_CALIBRATION",
+                    JSONObject().put("errorType",ex.javaClass.simpleName))
                 ui { calibrationStatus = "Calibration failed: " +
                     ex.javaClass.simpleName + ". See ALL Runs diagnostics." }
-            } finally { ui { calibrating = false } }
+            } finally {
+                currentRun?.event("OPERATION_END","CHECKERBOARD_CALIBRATION",
+                    JSONObject().put("elapsedMs",System.currentTimeMillis()-calStart))
+                ui { calibrating = false }
+            }
         }
     }
 
@@ -1026,6 +1129,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
+    var selectingEarlyObject by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
         if (coordinator.previewFile.isBlank()) null else {
@@ -1042,8 +1146,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         }
     }
 
-    DisposableEffect(permissionGranted, preview) {
-        if (permissionGranted) coordinator.bindCamera(preview)
+    DisposableEffect(permissionGranted, preview, coordinator.calibrating) {
+        if (permissionGranted && !coordinator.calibrating)
+            coordinator.bindCamera(preview)
         onDispose { coordinator.unbindCamera() }
     }
 
@@ -1175,6 +1280,25 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         style = MaterialTheme.typography.titleMedium)
                     Text("Finds relative camera pose and triangulates a small point cloud. Intrinsics are estimated; geometry has arbitrary scale, and background can dominate.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Recommended: choose your object BEFORE reconstructing. " +
+                        "These boxes will guide a separate feature-detection and reconstruction pass; " +
+                        "the original full-scene point cloud is also preserved.")
+                    Button(onClick={
+                        selectingEarlyObject=true
+                        focusPhotos=coordinator.earlyObjectSourcePhotos()
+                    }, enabled=latest!=null && latest.isClosed &&
+                        latest.frameCount>=2 && !coordinator.importing &&
+                        !coordinator.geometryAnalyzing && !coordinator.sparseAnalyzing &&
+                        !coordinator.thirdViewAnalyzing && !coordinator.calibrating &&
+                        !coordinator.objectFocusWorking) {
+                        Text(if(coordinator.earlyObjectSelected)
+                            "Change Object BEFORE Sparse 3D"
+                            else "Select Object BEFORE Sparse 3D")
+                    }
+                    if(coordinator.earlyObjectSelected) {
+                        Text("Early object rectangles saved. Analyze Sparse 3D now to " +
+                            "produce a separate ROI-priority point cloud.")
+                    }
                     Button(onClick = { coordinator.analyzeSparseTwoView() },
                         enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
                             !coordinator.liveSampling && !coordinator.smartSampling &&
@@ -1191,7 +1315,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Text("Draw the object rectangle in BOTH saved source photographs. " +
                         "Points must match inside both rectangles; background features " +
                         "can still contribute to camera pose. Not true segmentation.")
-                    Button(onClick={focusPhotos=coordinator.objectFocusSourcePhotos()},
+                    Button(onClick={
+                        selectingEarlyObject=false
+                        focusPhotos=coordinator.objectFocusSourcePhotos()
+                    },
                         enabled=latest != null && latest.isClosed &&
                             coordinator.sparseAvailable &&
                             !coordinator.sparseAnalyzing && !coordinator.thirdViewAnalyzing &&
@@ -1293,6 +1420,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.calibrationProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.calibrationStatus)
+                    Text("Calibration works independently of video import. The camera " +
+                        "preview pauses during processing to reduce memory pressure. " +
+                        "Afterward you can export calibration diagnostics even with no video runs.")
                     Text("Camera calibration candidate is saved separately. " +
                         "It is NOT automatically applied to other camera modes until verified.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1315,9 +1445,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 val name = ExportNames.allRunsZip(BuildConfig.VERSION_NAME)
                 coordinator.logExportName("ALL_RUNS_ZIP", name)
                 historyPicker.launch(name)
-            }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
-                !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
-                Text("Export ALL Runs + FPS Comparison")
+            }, enabled = (coordinator.savedRuns > 0 || coordinator.hasCalibrationHistory) &&
+                !coordinator.liveSampling && !coordinator.smartSampling &&
+                !coordinator.importing && !coordinator.geometryAnalyzing &&
+                !coordinator.calibrating) {
+                Text("Export ALL Runs + Calibration Diagnostics")
             }
             Text("Export filenames automatically include the installed version, run ID (when applicable) and UTC time. Older run metadata keeps its original creation version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
@@ -1336,7 +1468,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             },
             onConfirm={first,second ->
                 focusPhotos=null
-                coordinator.applyObjectFocus(first,second)
+                if(selectingEarlyObject) coordinator.saveEarlyObjectFocus(first,second)
+                else coordinator.applyObjectFocus(first,second)
             })
     }
 
@@ -1369,7 +1502,18 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "9. After generating sparse PLY, tap Verify Sparse Points in Third View. " +
             "Inspect successful third-view count or inconclusive reason in diagnostic ZIP. " +
             "This checks geometry but is not a full 3D scan. " +
-            "10. Tap Select Object in Two Photos. Photo 1 now opens LARGER. " +
+            "10. NEW RECOMMENDED ORDER: After extracting frames but BEFORE tapping Analyze Sparse 3D, " +
+            "tap Select Object BEFORE Sparse 3D. Photo 1 opens large. " +
+            "Drag ONE finger around the object, use + or - and Move to pan if needed, tap Next Photo, " +
+            "mark the SAME physical object in Photo 2, and tap Create. " +
+            "Then tap Analyze Sparse 3D — Two Views: full-scene pose and an independent ROI-priority ORB model run. " +
+            "The ROI object model uses its OWN two-view pose and coordinates, not a combined mesh. " +
+            "Legacy Select Object in Two Photos AFTER analysis still provides a subtractive filter. " +
+            "11. Test CALIBRATION with no video imported; use Export ALL Runs + Calibration Diagnostics " +
+            "even if there are no completed runs. Check camera preview returns afterward. " +
+            "12. Turn phone sideways during video processing or calibration; check operation continues " +
+            "rather than resetting. " +
+            "13. If calibration stops the app, reopen and look for interrupted-calibration message. " + +
             "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
             "or switch to Move to pan a zoomed image. Tap Next Photo. " +
             "Draw the same object in Photo 2 and tap Create Object PLY. " +

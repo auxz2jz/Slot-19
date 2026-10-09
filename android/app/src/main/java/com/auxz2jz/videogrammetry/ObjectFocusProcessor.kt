@@ -33,6 +33,52 @@ class ObjectFocusProcessor {
         return select(0) to select(1)
     }
 
+    /** Before any sparse model exists, pick deterministic actual saved JPEG frames. */
+    fun sourcePhotosBeforeSparse(run: ScanRun): Pair<File,File> {
+        require(run.isClosed && run.resultIsValid()) { "Complete video/frame capture first" }
+        val frames=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val pair=EarlyObjectFocusPolicy.sourcePair(frames.length())
+        fun checked(index:Int):File {
+            val name=frames.getJSONObject(index).getString("name")
+            require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) {
+                "Invalid saved frame name"
+            }
+            return File(File(run.directory,"frames"),name)
+                .also { require(it.isFile) { "Saved source photo missing" } }
+        }
+        return checked(pair.first) to checked(pair.second)
+    }
+
+    /** Stable selection only. No full scene PLY required or changed. */
+    fun saveBeforeSparse(run: ScanRun,first: FocusRect,second: FocusRect):JSONObject {
+        require(EarlyObjectFocusPolicy.selectionValid(first,second)) {
+            "Choose a valid object rectangle in BOTH photographs"
+        }
+        val frames=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val pair=EarlyObjectFocusPolicy.sourcePair(frames.length())
+        // Verify the source files before committing a potentially stale selection.
+        sourcePhotosBeforeSparse(run)
+        val metadata=JSONObject()
+            .put("schemaVersion",1).put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("selectedAtUtcMs",System.currentTimeMillis())
+            .put("sourcePair",JSONArray().put(pair.first).put(pair.second))
+            .put("sourceFrameCount",frames.length())
+            .put("firstRectangle",regionJson(first))
+            .put("secondRectangle",regionJson(second))
+            .put("status","SELECTED_BEFORE_RECONSTRUCTION")
+        val target=File(run.directory,"early_object_focus_selection.json")
+        val tmp=File(run.directory,"early_object_focus_selection.json.tmp")
+        tmp.writeText(metadata.toString(2))
+        check(tmp.renameTo(target)) { "Could not save early object selection" }
+        run.event("ANALYSIS_RESULT","EARLY_OBJECT_SELECTION",
+            JSONObject().put("sourceFrameA",pair.first).put("sourceFrameB",pair.second)
+                .put("status","SELECTED_BEFORE_RECONSTRUCTION"))
+        return metadata
+    }
+
     private fun regionJson(box: FocusRect):JSONObject=JSONObject()
         .put("left",box.left).put("top",box.top)
         .put("right",box.right).put("bottom",box.bottom)
