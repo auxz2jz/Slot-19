@@ -1533,7 +1533,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Button(onClick = {
                         coordinator.refreshClouds()
                         showCloudViewer = true
-                        coordinator.savedClouds.firstOrNull()?.let {
+                        (coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.SCENE_PLY
+                        } ?: coordinator.savedClouds.firstOrNull())?.let {
                             coordinator.openSavedCloud(it)
                         }
                     }, enabled = coordinator.savedClouds.isNotEmpty() &&
