@@ -10,13 +10,18 @@ All entries are PLANNED until implemented and tested. An implemented/CI-tested c
 
 ## Milestone v0.1.0 — Acquisition foundation
 - [ ] Accept a recorded video or a supported live camera/RTSP/HTTP source.
-- [ ] Extract regularly spaced frames (initially fixed interval) into a new non-overwriting project/run directory.
+- [x] Extract regularly spaced frames (initially fixed interval) into a new non-overwriting project/run directory (recorded-video path CI-tested; live source device test pending).
 - [ ] Preserve original input; capture provenance, source type, frame count, settings, duration if available and tool versions.
-- [ ] Validate actual output images and save `frames_manifest.json`.
-- [ ] Structured persistent diagnostics, error/stall/cancellation reporting appropriate to the program, `Export Diagnostics` path.
-- [ ] `Test This Version` guide with real success/failure validation, manual failure control and report.
-- [ ] Targeted unit/integration tests; build/packaging documentation; create v0.1.0 **candidate**.
+- [x] Validate actual output PNG images, hashes/count/dimensions and save `frames_manifest.json` (CI-tested).
+- [x] Structured persistent diagnostics, error/timeout/cancellation reporting, bounded rolling action trace and `export-diagnostics` command (CI-tested for export and error cases; physical device tests pending).
+- [x] CLI `test-this-version` guide with actual output validation, manual failure answer, test report and correlated diagnostic events (CI-tested; later GUI pending).
+- [x] Python source compile and 6 targeted unit/integration tests passed in GitHub Actions run 37889805717; v0.1.0 **SOURCE CANDIDATE** committed, NOT a Windows EXE/APK.
 - [ ] User physically tests and confirms before marking VERIFIED.
+
+### v0.1.0 remaining / unverified
+- [ ] Physically test recorded-video and live webcam/phone stream on the actual Windows setup.
+- [ ] Ensure program captures full input provenance safely and check actual camera-specific FFmpeg compatibility.
+- [ ] Add a friendly graphical interface after user confirms acquisition flow, if desired.
 
 ## Milestone v0.2.x — Quality-aware video frames
 - [ ] Sharpness/blur, motion, exposure and overlap metrics; selection per camera mode and rejection reasons.
