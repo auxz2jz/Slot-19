@@ -1124,6 +1124,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
+    var selectingEarlyObject by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
         if (coordinator.previewFile.isBlank()) null else {
@@ -1274,6 +1275,25 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         style = MaterialTheme.typography.titleMedium)
                     Text("Finds relative camera pose and triangulates a small point cloud. Intrinsics are estimated; geometry has arbitrary scale, and background can dominate.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Recommended: choose your object BEFORE reconstructing. " +
+                        "These boxes will guide a separate feature-detection and reconstruction pass; " +
+                        "the original full-scene point cloud is also preserved.")
+                    Button(onClick={
+                        selectingEarlyObject=true
+                        focusPhotos=coordinator.earlyObjectSourcePhotos()
+                    }, enabled=latest!=null && latest.isClosed &&
+                        latest.frameCount>=2 && !coordinator.importing &&
+                        !coordinator.geometryAnalyzing && !coordinator.sparseAnalyzing &&
+                        !coordinator.thirdViewAnalyzing && !coordinator.calibrating &&
+                        !coordinator.objectFocusWorking) {
+                        Text(if(coordinator.earlyObjectSelected)
+                            "Change Object BEFORE Sparse 3D"
+                            else "Select Object BEFORE Sparse 3D")
+                    }
+                    if(coordinator.earlyObjectSelected) {
+                        Text("Early object rectangles saved. Analyze Sparse 3D now to " +
+                            "produce a separate ROI-priority point cloud.")
+                    }
                     Button(onClick = { coordinator.analyzeSparseTwoView() },
                         enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
                             !coordinator.liveSampling && !coordinator.smartSampling &&
@@ -1290,7 +1310,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Text("Draw the object rectangle in BOTH saved source photographs. " +
                         "Points must match inside both rectangles; background features " +
                         "can still contribute to camera pose. Not true segmentation.")
-                    Button(onClick={focusPhotos=coordinator.objectFocusSourcePhotos()},
+                    Button(onClick={
+                        selectingEarlyObject=false
+                        focusPhotos=coordinator.objectFocusSourcePhotos()
+                    },
                         enabled=latest != null && latest.isClosed &&
                             coordinator.sparseAvailable &&
                             !coordinator.sparseAnalyzing && !coordinator.thirdViewAnalyzing &&
@@ -1435,7 +1458,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             },
             onConfirm={first,second ->
                 focusPhotos=null
-                coordinator.applyObjectFocus(first,second)
+                if(selectingEarlyObject) coordinator.saveEarlyObjectFocus(first,second)
+                else coordinator.applyObjectFocus(first,second)
             })
     }
 
