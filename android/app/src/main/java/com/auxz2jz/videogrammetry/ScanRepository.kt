@@ -62,7 +62,10 @@ class ScanRepository(private val context: Context) {
     fun exportAllRunDiagnostics(uri: Uri): Int {
         val runs = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
             ?.sortedBy { it.name } ?: emptyList()
-        require(runs.isNotEmpty()) { "No completed runs" }
+        val calibrationLog=File(context.filesDir,"camera_calibration/events.jsonl")
+        require(runs.isNotEmpty() || calibrationLog.isFile) {
+            "Capture a run OR attempt checkerboard calibration before exporting history"
+        }
         val files = listOf("manifest.json", "result.json", "events.jsonl",
             "test_results.json", "test_report.txt",
             "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
