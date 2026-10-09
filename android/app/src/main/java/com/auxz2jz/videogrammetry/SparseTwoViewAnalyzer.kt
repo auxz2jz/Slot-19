@@ -761,4 +761,140 @@ class SparseTwoViewAnalyzer {
         }
     }
 
+
+    /**
+     * EXPERIMENTAL incremental multi-view: source pair plus up to 8 further
+     * registered saved camera views. Each new XYZ point is reconstructed from
+     * a fresh first-photo descriptor track, triangulated into the SAME local
+     * baseline frame using a PnP-estimated additional camera pose.
+     * Not bundle adjustment, semantic segmentation, or a dense mesh.
+     */
+    fun analyzeObjectMultiView(run:ScanRun,
+        progress:(Int,Int)->Unit):JSONObject {
+        require(run.isClosed && run.resultIsValid()) { "Completed frames required" }
+        val saved=File(run.directory,"early_object_focus_selection.json")
+        require(saved.isFile) { "First select the object BEFORE sparse 3D" }
+        val selection=JSONObject(saved.readText())
+        require(selection.getString("runId")==run.id &&
+            selection.getInt("schemaVersion")==1) { "Invalid saved early object selection" }
+        val frames=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val pair=selection.getJSONArray("sourcePair")
+        val expected=EarlyObjectFocusPolicy.sourcePair(frames.length())
+        require(pair.getInt(0)==expected.first && pair.getInt(1)==expected.second &&
+            selection.optInt("sourceFrameCount")==frames.length()) {
+            "Selected object photographs no longer match this scan"
+        }
+        fun rect(key:String):FocusRect {
+            val o=selection.getJSONObject(key)
+            return FocusRect(o.getDouble("left"),o.getDouble("top"),
+                o.getDouble("right"),o.getDouble("bottom"))
+        }
+        val a=rect("firstRectangle");val b=rect("secondRectangle")
+        require(EarlyObjectFocusPolicy.selectionValid(a,b)) { "Invalid saved ROI" }
+        val options=MultiViewPolicy.extraFrames(frames.length(),expected.second)
+        val id=UUID.randomUUID().toString()
+        val rows=JSONArray()
+        val out=JSONObject().put("analysisId",id).put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("method","EARLY_ROI_ORB_PNP_REGISTERED_EXTRA_VIEWS_NEW_TRACK_TRIANGULATION")
+            .put("originalSourcePair",pair)
+            .put("extraFrameIndices",JSONArray(options))
+            .put("sourceSelectionTimestamp",selection.optLong("selectedAtUtcMs"))
+            .put("cameraIntrinsics","ESTIMATED_NOT_CALIBRATED")
+            .put("scale","UNKNOWN_ARBITRARY_BASELINE")
+            .put("sameCoordinateSystemAsRoiTwoView",true)
+            .put("sameCoordinateSystemAsFullScene",false)
+            .put("warning","Each new point is triangulated with its FIRST source photo and one registered extra view. No bundle adjustment or metric scale. Background inside user ROI may still be reconstructed. A higher count is not proof of shape.")
+            .put("status","IN_PROGRESS")
+        run.event("OPERATION_START","OBJECT_MULTIVIEW",
+            JSONObject().put("analysisId",id).put("extraViews",options.size))
+        val target=File(run.directory,CloudArtifacts.MULTIVIEW_PLY)
+        try {
+            check(OpenCVLoader.initLocal()) { "OpenCV module unavailable" }
+            val orb=ORB.create(2400)
+            try {
+                val first=features(checkedFile(run,frames,expected.first),orb,a)
+                try {
+                    val second=features(checkedFile(run,frames,expected.second),orb,b)
+                    val baseline=try {
+                        candidate(first,second,expected.first,expected.second)
+                    } finally { second.release() }
+                    val base=baseline.vertices
+                    out.put("baselinePairVerdict",baseline.report.optString("verdict"))
+                        .put("baselinePoints",base.size)
+                        .put("baselineAnchorTracks",baseline.anchorTracks.size)
+                    val combined=ArrayList<SparseVertex>(base)
+                    val used=baseline.anchorTracks.keys.toMutableSet()
+                    var supported=0
+                    var contributing=0
+                    for((ordinal,index) in options.withIndex()) {
+                        val extra=features(checkedFile(run,frames,index),orb)
+                        try {
+                            val (row,points)=try {
+                                if(base.isEmpty() ||
+                                    baseline.anchorTracks.size<MultiViewPolicy.MIN_TRACKS)
+                                    JSONObject().put("frame",index)
+                                        .put("state","BASELINE_INCONCLUSIVE") to
+                                        emptyList<SparseVertex>()
+                                else expandRegisteredView(first,extra,baseline,index,used)
+                            } catch(ex:Exception) {
+                                JSONObject().put("frame",index)
+                                    .put("state","VIEW_ANALYSIS_ERROR")
+                                    .put("errorType",ex.javaClass.simpleName) to
+                                    emptyList<SparseVertex>()
+                            }
+                            if(row.optString("state")=="PNP_REGISTERED_TRIANGULATED") {
+                                supported++
+                                if(points.isNotEmpty())contributing++
+                            }
+                            combined.addAll(points)
+                            rows.put(row)
+                            run.event("ANALYSIS_PROGRESS","OBJECT_MULTIVIEW",
+                                JSONObject().put("done",ordinal+1)
+                                    .put("total",options.size)
+                                    .put("newPoints",combined.size-base.size))
+                            progress(ordinal+1,options.size)
+                        } finally { extra.release() }
+                        if(combined.size>=MultiViewPolicy.MAX_TOTAL_POINTS)break
+                    }
+                    val added=combined.size-base.size
+                    val verdict=MultiViewPolicy.verdict(base.size,added,contributing)
+                    out.put("extraViewResults",rows)
+                        .put("attemptedExtraViews",rows.length())
+                        .put("pnpRegisteredExtraViews",supported)
+                        .put("viewsContributingNewPoints",contributing)
+                        .put("newPointsFromAdditionalFrames",added)
+                        .put("totalPoints",combined.size)
+                        .put("status",verdict)
+                    if(verdict=="MULTIVIEW_SPARSE_CANDIDATE") {
+                        val tmp=File(run.directory,CloudArtifacts.MULTIVIEW_PLY+".tmp")
+                        tmp.writeText(SparsePolicy.asciiPly(combined))
+                        check(tmp.length()>150) { "Multi-view PLY empty" }
+                        check(tmp.renameTo(target)) { "Cannot finalize multi-view PLY" }
+                    } else target.delete()
+                } finally { first.release() }
+            } finally { orb.clear() }
+            val report=File(run.directory,CloudArtifacts.MULTIVIEW_REPORT)
+            val tmp=File(run.directory,CloudArtifacts.MULTIVIEW_REPORT+".tmp")
+            tmp.writeText(out.toString(2))
+            check(tmp.renameTo(report)) { "Cannot finalize multi-view report" }
+            run.event("ANALYSIS_RESULT","OBJECT_MULTIVIEW",
+                JSONObject().put("analysisId",id)
+                    .put("status",out.optString("status"))
+                    .put("basePoints",out.optInt("baselinePoints"))
+                    .put("newPoints",out.optInt("newPointsFromAdditionalFrames"))
+                    .put("extraViewsContributed",out.optInt("viewsContributingNewPoints")))
+            return out
+        } catch(ex:Exception) {
+            out.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
+            File(run.directory,"object_multiview_last_failure.json")
+                .writeText(out.toString(2))
+            run.event("ERROR","OBJECT_MULTIVIEW",
+                JSONObject().put("analysisId",id)
+                    .put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
 }
