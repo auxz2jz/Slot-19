@@ -27,6 +27,12 @@ android {
         }
     }
     buildTypes {
+        // CI uses a runner-generated debug signing key on each build.
+        // Give this experimental candidate a separate ID so testing never
+        // requires uninstalling the user's verified v0.8.1 application/data.
+        debug {
+            applicationIdSuffix = ".preview090"
+        }
         release {
             isMinifyEnabled = false
         }
