@@ -158,3 +158,11 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] CI `37919747862` pass, archive tested build/app and SHA.
 - [ ] User tests third-view verification on textured camera-moving sample, weak/low-parallax sample, exports full ZIP, validates earlier capture/PLY/viewer/calibration features. NO exact scale / finished 3D claim.
 - [ ] After this test, improve camera metadata, EXIF/lens-zoom/intrinsics/crop matching; eventually multi-view sparse tracks/bundle adjustment and object-aware segmentation.
+
+
+## v0.7.0 device verification update — native viewer
+- [x] User physically confirmed v0.7.0 **3D point cloud displays and rotates correctly** on phone; this is viewer functionality verification, not geometric shape accuracy.
+- [x] Diagnostics from uploaded v0.7.0 run established third-view output `THIRD_VIEW_SUPPORTED` for three later frames and a stable 114-point PLY, with no run error events.
+- [ ] User has not confirmed whether point cloud resembles their physical object. Do not mark model accuracy, scale, or global multi-view structure verified.
+- [ ] Camera calibration source 1000×467 aspect incompatible with saved video 720×1280; match camera/lens/crop/zoom and EXIF before enabling calibrated pose estimation.
+- [ ] Improve object/background feature separation and eventually multi-view SfM/bundle adjustment only with trustworthy geometry tests and recovery baseline preserved.
