@@ -1,4 +1,4 @@
-# Android Video 3D Capture Lab — v0.3.0 CANDIDATE
+# Android Video 3D Capture Lab — v0.4.0 ORB Geometry CANDIDATE (v0.3.0 capture verified)
 
 Native Kotlin/Compose camera capture application in `auxz2jz/Slot-19/android/`. Windows program separately owned; read `../windows/OWNERSHIP.md` and `../shared/`. This Android app is a **frame/photo capture research tool**: it does **not** yet compute camera poses, point clouds, meshes, textures, or laser geometry.
 
@@ -65,3 +65,10 @@ The Android v0.4.0 **candidate** adds an independent **Analyze Latest Run — OR
 **Build note:** Official OpenCV 4.12 Android AAR adds native code; a universal debug APK is significantly larger than older releases. ARM64-specific build outputs are intended for modern ARM64 phones, with universal fallback. If updating a GitHub-signed debug APK requires uninstalling the previous version, export important data first; uninstall may delete app-private captures.
 
 See `ORB_GEOMETRY_PLAN.md`, `CHECKPOINT.md` and `DIAGNOSTICS_AND_TESTING.md` for algorithms, source fingerprint and tests. **Windows implementation is unchanged.**
+
+### Verified v0.4.0 CI artifact links / identity
+
+- ARM64 phone APK: `Video3DCapture-Android-v0.4.0-ARM64-CANDIDATE.apk`, 36,404,569 bytes, SHA256 `7f9aca331b78f56595f799971106c2e23a09b212f0ece565846fd40d3ebfb1cd`.
+- Universal fallback: `Video3DCapture-Android-v0.4.0-UNIVERSAL-CANDIDATE.apk`, 153,240,179 bytes, SHA256 `156d697bdfb1a8f8eac5ee1e061f4dead356f8a5bb861d5386482077d3fce327`.
+- CI SUCCESS: https://github.com/auxz2jz/Slot-19/actions/runs/37906142981 — artifact `video3d-android-v0.4.0-candidate`, ID `11603669766`. Exact built source `36323ccbda8d6dbf7efce929c14ae909233cee33`, saved `backup/android-v0.4.0-arm64-ci-candidate`.
+- Both artifact ZIP and generated `SHA256SUMS.txt` passed verification. Device OpenCV-native functionality remains **USER TEST PENDING**; verified v0.3.0 capture version preserved.
