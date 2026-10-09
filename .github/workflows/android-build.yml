@@ -38,6 +38,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Read Android app version for APK artifact names
+        id: app_version
+        shell: bash
+        run: |
+          VERSION=$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' android/app/build.gradle.kts | head -n1)
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - name: Build Android APK and run unit tests
         run: gradle -p android :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK exists and fingerprint
@@ -46,15 +53,15 @@ jobs:
           test -s "$APK_DIR/app-arm64-v8a-debug.apk"
           test -s "$APK_DIR/app-universal-debug.apk"
           mkdir -p android-artifact
-          cp "$APK_DIR/app-arm64-v8a-debug.apk" android-artifact/Video3DCapture-Android-v0.6.0-ARM64-CANDIDATE.apk
-          cp "$APK_DIR/app-universal-debug.apk" android-artifact/Video3DCapture-Android-v0.6.0-UNIVERSAL-CANDIDATE.apk
+          cp "$APK_DIR/app-arm64-v8a-debug.apk" android-artifact/Video3DCapture-Android-v${{ steps.app_version.outputs.version }}-ARM64-CANDIDATE.apk
+          cp "$APK_DIR/app-universal-debug.apk" android-artifact/Video3DCapture-Android-v${{ steps.app_version.outputs.version }}-UNIVERSAL-CANDIDATE.apk
           cd android-artifact
           sha256sum *.apk > SHA256SUMS.txt
           ls -lh
       - name: Upload Android APK candidate
         uses: actions/upload-artifact@v4
         with:
-          name: video3d-android-v0.6.0-candidate
+          name: video3d-android-v${{ steps.app_version.outputs.version }}-candidate
           path: android-artifact/
           retention-days: 60
           if-no-files-found: error
