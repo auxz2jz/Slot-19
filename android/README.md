@@ -158,3 +158,14 @@ User should install and verify new naming for all export types, confirm no app r
 6. Reconfirm all original capture/ORB/sparse and export-name behavior. User must explicitly confirm results before v0.7 becomes verified.
 
 **Not yet a finished object model:** points remain from two camera views, relative/unknown scale, possible background features, no mesh, no calibrated lens distortion or global multi-view bundle adjustment. See `THIRD_VIEW_GEOMETRY_PLAN.md` and `CHECKPOINT.md` for architecture, limitation and exact recovery instructions.
+
+
+## Android v0.8.0 — Object Focus: select the object in two saved photos
+
+**New:** Draw an object rectangle separately on the actual TWO saved source photos used by the sparse-pose estimate, and export a separate **Object-Focused PLY** filtered from the original matched XYZ points. The app keeps the all-scene PLY intact and lets you compare each in the existing touch-controlled viewer. Filtered points must lie inside both selected photo rectangles. This feature does NOT segment pixels automatically, generate new points, infer missing surfaces or measure real-world scale.
+
+**Recommended ARM64 phone APK:** `Video3DCapture-Android-v0.8.0-ARM64-CANDIDATE.apk`, 36,519,257 bytes, SHA256 `b7baeaab39fc572d06ac2e3b4a381b92504dd4330c4b711797ff2ba3b22dd3ec`. Universal alternative `Video3DCapture-Android-v0.8.0-UNIVERSAL-CANDIDATE.apk`, 153,354,867 bytes, SHA256 `8a9c07f04ef57c3e388d7c8ecf1028ffd41e167433f057521575c33b2056166c`. GitHub Actions `37987114085` passed compile/JVM tests, APK hashes and upload; exact tested source `2f7ff98aafcf49d8474d8045d008692468d3fac6`, backup `backup/android-v0.8.0-object-focus-ci-candidate`. **Unverified on physical device until user tests.** Previously verified viewer is v0.7, with backup `backup/android-v0.7.0-user-confirmed-viewer-source`.
+
+To test, capture new frames or use saved frames and tap **Analyze Sparse 3D — Two Views**. For prior v0.7 scans, first rerun this analysis once to generate source-image point mapping (old PLY files did not contain it). Tap **Select Object in Two Photos**, drag a green box around the SAME object in EACH photo, then **Create Object-Focused PLY**. The app reports how many points are retained and excluded. Tap **View Object-Focused Points — 3D** and compare against the **Full scene** entry under saved point clouds. **Export Object-Focused PLY** creates a versioned file with run ID/time and never replaces **Export Sparse PLY**. Export diagnostic ZIP with `sparse_point_projections.json`, `object_focus_selection.json` and `object_focus_report.json` but no photos.
+
+The checkerboard 9×6 photo-calibration stage remains opt-in/unapplied to sparse pose until a compatible lens/zoom/crop is demonstrated. Earlier capture modes, ORB, third-view verification and PLY save naming remain. See `OBJECT_FOCUS_PLAN.md` and `CHECKPOINT.md`.
