@@ -651,8 +651,53 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.2.0 CANDIDATE — Smart Auto Capture experimental; no 3D reconstruction")
+            Text("Android v0.3.0 CANDIDATE — Adjustable FPS and per-run diagnostics")
             Text("Keep the object stationary; move the phone slowly around it.")
+            val settings = coordinator.editingOptions
+            val editingAllowed = !coordinator.liveSampling && !coordinator.smartSampling &&
+                !coordinator.importing
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Capture settings — choose which mode to configure",
+                        style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for ((key, title) in listOf("LIVE" to "Live", "VIDEO" to "Video",
+                            "SMART" to "Smart")) {
+                            FilterChip(
+                                selected = coordinator.settingsMode == key,
+                                onClick = { coordinator.chooseSettingsMode(key) },
+                                label = { Text(title) },
+                                enabled = editingAllowed
+                            )
+                        }
+                    }
+                    Text(if (coordinator.settingsMode == "SMART")
+                        "Maximum automatic photos per second: " + settings.targetFps
+                        else "Requested frames per second: " + settings.targetFps)
+                    Slider(
+                        value = settings.targetFps.toFloat(),
+                        onValueChange = { coordinator.setTargetFps(it.toDouble()) },
+                        valueRange = 0.5f..5f,
+                        steps = 8,
+                        enabled = editingAllowed
+                    )
+                    Text("Maximum saved photos/frames: " + settings.maxFrames)
+                    Slider(
+                        value = settings.maxFrames.toFloat(),
+                        onValueChange = { coordinator.setFrameLimit(it.roundToInt()) },
+                        valueRange = 10f..300f,
+                        steps = 28,
+                        enabled = editingAllowed
+                    )
+                    Text(when (coordinator.settingsMode) {
+                        "LIVE" -> FrameRateAdvice.LIVE
+                        "SMART" -> FrameRateAdvice.SMART
+                        else -> FrameRateAdvice.VIDEO
+                    }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(FrameRateAdvice.STORAGE,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (!permissionGranted) {
                 Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
                     Text("Enable Camera")
@@ -696,7 +741,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 Column(Modifier.padding(12.dp)) {
                     Text(coordinator.status)
                     Text("Saved frames: " + coordinator.visibleCount)
-                    Text("Live: max 30/1.2 s. Smart: 30 full-quality JPEGs. Video: max 40/1 s.")
+                    Text("Settings apply to the selected mode; the app records each run's requested and measured capture rate.")
+                    Text("Completed runs saved: " + coordinator.savedRuns)
                 }
             }
             if (latestBitmap != null) {
@@ -709,10 +755,18 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.2.0-test-diagnostics.zip")
+                exportPicker.launch("Android-v0.3.0-last-run-diagnostics.zip")
             }, enabled = latest != null && latest.isClosed) {
                 Text("Export Test + Diagnostics")
             }
+            Button(onClick = {
+                historyPicker.launch("Android-v0.3.0-ALL-run-comparison.zip")
+            }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
+                !coordinator.smartSampling && !coordinator.importing) {
+                Text("Export ALL Runs + FPS Comparison")
+            }
+            Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Reconstruction engines: NOT IMPLEMENTED.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -720,7 +774,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
 
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.2.0") },
+        title = { Text("Test This Version — v0.3.0") },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
             "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
             "when the image is steady, sharp and sufficiently different.\n\n" +
@@ -728,7 +782,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "for correct orientation and sharpness.\n\n" +
             "3. Tap Frames Look Correct only if the result is actually correct. " +
             "Otherwise tap Expected Behavior Failed.\n\n" +
-            "4. Export Test + Diagnostics ZIP. This does not test any 3D reconstruction.") },
+            "4. Try the same stationary object at 0.5, 1, 2 and 3 FPS using the rate slider, then Export ALL Runs + FPS Comparison. " +
+            "Look for useful sharp views and sufficient overlap; higher FPS alone is not a PASS. " +
+            "This does not test any 3D reconstruction.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
