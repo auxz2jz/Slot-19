@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videogrammetry-lab"
+version = "0.1.0"
+description = "Local-first video-to-photogrammetry multi-engine experiment"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools]
+packages = ["videogrammetry"]
