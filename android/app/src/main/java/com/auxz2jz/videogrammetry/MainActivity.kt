@@ -25,6 +25,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,6 +34,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,6 +55,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.nio.ByteBuffer
@@ -78,6 +84,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private val worker = Executors.newSingleThreadExecutor()
     // Separate from CameraX so a long ORB/RANSAC analysis cannot block preview.
     private val geometryWorker = Executors.newSingleThreadExecutor()
+    private val calibrationWorker = Executors.newSingleThreadExecutor()
+    private val checkerboardCalibrator = CheckerboardCalibrator(activity)
     private val sampling = AtomicBoolean(false)
     private val smartSelecting = AtomicBoolean(false)
     private val smartInFlight = AtomicBoolean(false)
@@ -139,6 +147,21 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var sparseAvailable by mutableStateOf(
         currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
         private set
+    var savedClouds by mutableStateOf(repository.savedPlyEntries())
+        private set
+    var viewerCloud by mutableStateOf<PointCloud?>(null)
+        private set
+    var viewerStatus by mutableStateOf("Select a saved or imported PLY")
+        private set
+    var viewerLoading by mutableStateOf(false)
+        private set
+    var calibrating by mutableStateOf(false)
+        private set
+    var calibrationProgress by mutableStateOf(0f)
+        private set
+    var calibrationStatus by mutableStateOf("No camera calibration measured yet")
+        private set
+
     var geometryProgress by mutableStateOf(0f)
         private set
     var geometrySummary by mutableStateOf("Geometric feature analysis has not run on the latest capture")
@@ -569,6 +592,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         ui {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
             savedRuns = repository.completedRunCount()
             active = null
@@ -657,6 +681,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     val success = result.optString("status") == "SPARSE_CANDIDATE"
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
+                    savedClouds = repository.savedPlyEntries()
                     sparseMessage = if (success)
                         "Experimental cloud: " + result.optInt("pointCount") +
                             " points from two views. Unknown scale; not a finished 3D model."
@@ -688,6 +713,91 @@ class CaptureCoordinator(private val activity: MainActivity) {
             } catch(ex:Exception) {
                 ui { status = "Sparse PLY export failed: " + ex.javaClass.simpleName }
             }
+        }
+    }
+
+
+    fun refreshClouds() { savedClouds = repository.savedPlyEntries() }
+
+    fun openSavedCloud(entry: SavedPlyEntry) {
+        if (viewerLoading || sparseAnalyzing) return
+        viewerLoading = true
+        viewerStatus = "Reading saved PLY point coordinates..."
+        geometryWorker.execute {
+            try {
+                val points = entry.file.inputStream().use {
+                    PlyParser.parse(it, "Run " + entry.runId.takeLast(12))
+                }
+                currentRun?.event("USER_ACTION", "VIEW_SAVED_PLY", JSONObject()
+                    .put("selectedRunId",entry.runId).put("pointCount",points.count))
+                ui {
+                    viewerCloud = points
+                    viewerStatus = points.count.toString() +
+                        " colored points. Rotate or zoom; physical scale unknown."
+                }
+            } catch (ex: Exception) {
+                currentRun?.event("ERROR", "VIEW_SAVED_PLY",
+                    JSONObject().put("errorType",ex.javaClass.simpleName))
+                ui { viewerStatus = "Unable to open PLY: " + ex.javaClass.simpleName }
+            } finally { ui { viewerLoading = false } }
+        }
+    }
+    fun openImportedCloud(uri: Uri) {
+        if (viewerLoading) return
+        viewerLoading = true
+        viewerStatus = "Reading imported PLY..."
+        geometryWorker.execute {
+            try {
+                val stream = activity.contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException("Cannot read PLY")
+                val cloud = stream.use { PlyParser.parse(it,"Imported PLY") }
+                currentRun?.event("USER_ACTION","VIEW_IMPORTED_PLY",
+                    JSONObject().put("pointCount",cloud.count))
+                ui {
+                    viewerCloud = cloud
+                    viewerStatus = cloud.count.toString() +
+                        " imported points. Source coordinates remain unscaled."
+                }
+            } catch(ex:Exception) {
+                currentRun?.event("ERROR","VIEW_IMPORTED_PLY",
+                    JSONObject().put("errorType",ex.javaClass.simpleName))
+                ui { viewerStatus = "Unable to parse PLY: " + ex.javaClass.simpleName }
+            } finally { ui { viewerLoading = false } }
+        }
+    }
+
+    /** Opt-in calibration import only; do not apply to unknown image/crop pipeline. */
+    fun calibrateCheckerboard(images: List<Uri>) {
+        if (images.isEmpty()) return
+        if (calibrating || importing || liveSampling || smartSampling ||
+            sparseAnalyzing || geometryAnalyzing) {
+            calibrationStatus = "Finish the other activity before calibration"
+            return
+        }
+        calibrating = true
+        calibrationProgress = 0f
+        calibrationStatus = "Finding 9 x 6 inner corners in selected images..."
+        calibrationWorker.execute {
+            try {
+                val report = checkerboardCalibrator.calibrate(images) { done,total ->
+                    ui {
+                        calibrationProgress = done.toFloat()/total
+                        calibrationStatus = "Checked " + done + "/" + total +
+                            " checkerboard photos..."
+                    }
+                }
+                ui {
+                    calibrationStatus = report.optString("status") +
+                        ": " + report.optInt("acceptedImages") + "/" +
+                        images.size + " photos accepted, reprojection RMS " +
+                        report.optString("rmsReprojectionPx","unavailable") +
+                        " px. Not automatically applied to 3D."
+                    status = "Checkerboard report saved; Export ALL Runs includes it."
+                }
+            } catch(ex:Exception) {
+                ui { calibrationStatus = "Calibration failed: " +
+                    ex.javaClass.simpleName + ". See ALL Runs diagnostics." }
+            } finally { ui { calibrating = false } }
         }
     }
 
@@ -731,6 +841,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     fun shutdown() {
         geometryWorker.shutdownNow()
+        calibrationWorker.shutdownNow()
         sampling.set(false)
         smartSelecting.set(false)
         provider?.unbindAll()
@@ -755,6 +866,12 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val videoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) coordinator.importVideo(uri) }
+    val importPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) coordinator.openImportedCloud(uri) }
+    val checkerPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> coordinator.calibrateCheckerboard(uris) }
     val plyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if (uri != null) coordinator.exportSparsePly(uri) }
@@ -766,6 +883,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     ) { uri -> if (uri != null) coordinator.exportDiagnostics(uri) }
     val preview = remember { PreviewView(context) }
     var showGuide by remember { mutableStateOf(false) }
+    var showCloudViewer by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
         if (coordinator.previewFile.isBlank()) null else {
@@ -791,7 +909,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.5.0 CANDIDATE — Experimental two-view sparse 3D")
+            Text("Android v0.6.0 CANDIDATE — Built-in point viewer + checkerboard calibration")
             Text("Keep the object stationary; move the phone slowly around it.")
             val settings = coordinator.editingOptions
             val editingAllowed = !coordinator.liveSampling && !coordinator.smartSampling &&
@@ -928,6 +1046,23 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
                     Button(onClick = {
+                        coordinator.refreshClouds()
+                        showCloudViewer = true
+                        coordinator.savedClouds.firstOrNull()?.let {
+                            coordinator.openSavedCloud(it)
+                        }
+                    }, enabled = coordinator.savedClouds.isNotEmpty() &&
+                        !coordinator.sparseAnalyzing && !coordinator.geometryAnalyzing) {
+                        Text("View Sparse Points — 3D")
+                    }
+                    Button(onClick = {
+                        showCloudViewer = true
+                        importPlyPicker.launch(arrayOf("*/*"))
+                    }, enabled = !coordinator.sparseAnalyzing &&
+                        !coordinator.geometryAnalyzing) {
+                        Text("Open a PLY File to View")
+                    }
+                    Button(onClick = {
                         plyPicker.launch("Android-v0.5.0-sparse-two-view.ply")
                     }, enabled = coordinator.sparseAvailable &&
                         !coordinator.sparseAnalyzing && !coordinator.geometryAnalyzing &&
@@ -937,17 +1072,43 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     }
                 }
             }
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Checkerboard camera calibration",
+                        style = MaterialTheme.typography.titleMedium)
+                    Text("Your US Letter pattern: 9 x 6 INNER corners, 10 x 7 squares, " +
+                        "25.0 mm squares; whole checkerboard 250 x 175 mm. " +
+                        "Long side runs along the 11-inch paper edge. Print at Actual Size and verify 25 mm with a ruler.")
+                    Text("Take 12–20 sharp photos of the flat board at different tilts and " +
+                        "positions, using the SAME rear camera, lens and zoom. " +
+                        "Keep all 54 inner corners visible. Even light, minimal glare; " +
+                        "a white outer backing is acceptable if the corners are distinct.")
+                    Button(onClick = { checkerPicker.launch(arrayOf("image/*")) },
+                        enabled = !coordinator.calibrating && !coordinator.liveSampling &&
+                            !coordinator.smartSampling && !coordinator.importing &&
+                            !coordinator.geometryAnalyzing && !coordinator.sparseAnalyzing) {
+                        Text("Calibrate Using Checkerboard Photos")
+                    }
+                    if (coordinator.calibrating) LinearProgressIndicator(
+                        progress = { coordinator.calibrationProgress },
+                        modifier = Modifier.fillMaxWidth())
+                    Text(coordinator.calibrationStatus)
+                    Text("Camera calibration candidate is saved separately. " +
+                        "It is NOT automatically applied to other camera modes until verified.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             Button(onClick = { showGuide = true },
                 enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.5.0-last-run-diagnostics.zip")
+                exportPicker.launch("Android-v0.6.0-last-run-diagnostics.zip")
             }, enabled = latest != null && latest.isClosed && !coordinator.geometryAnalyzing) {
                 Text("Export Test + Diagnostics")
             }
             Button(onClick = {
-                historyPicker.launch("Android-v0.5.0-ALL-run-comparison.zip")
+                historyPicker.launch("Android-v0.6.0-ALL-run-comparison.zip")
             }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
                 !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Export ALL Runs + FPS Comparison")
@@ -959,9 +1120,15 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         }
     }
 
+    if (showCloudViewer) SparseViewerDialog(
+        coordinator=coordinator,
+        onClose={showCloudViewer=false},
+        onImport={importPlyPicker.launch(arrayOf("*/*"))}
+    )
+
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.5.0") },
+        title = { Text("Test This Version — v0.6.0") },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
             "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
             "when the image is steady, sharp and sufficiently different.\n\n" +
@@ -974,7 +1141,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "5. After a capture, tap Analyze Latest Run — ORB Geometry and inspect matched-pair counts. " +
             "A low match count is not a capture-file failure; a high count is not a reconstructed model. " +
             "6. Tap Analyze Sparse 3D — Two Views. If a cloud passes checks, Export Sparse PLY. " +
-            "Inspect it separately; scale and camera calibration are not established.") },
+            "Inspect it separately; scale is not known. " +
+            "7. Tap View Sparse Points — 3D: drag/pinch, switch saved runs, " +
+            "and verify point colors/relative shape; if viewing fails use Open a PLY File. " +
+            "8. Optionally calibrate using 12–20 images of the printed 9x6 checkerboard. " +
+            "Inspect accepted image count and RMS; calibration is not applied to sparse reconstruction yet.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
@@ -986,4 +1157,75 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             }
         }
     )
+}
+
+@Composable
+private fun SparseViewerDialog(
+    coordinator: CaptureCoordinator,
+    onClose: () -> Unit,
+    onImport: () -> Unit
+) {
+    val context=LocalContext.current
+    val surface=remember { SparseCloudView(context) }
+    var showChoices by remember { mutableStateOf(false) }
+    var size by remember { mutableStateOf(3.5f) }
+    var focus by remember { mutableStateOf(true) }
+    var showColors by remember { mutableStateOf(true) }
+    Dialog(onDismissRequest=onClose,
+        properties=DialogProperties(usePlatformDefaultWidth=false)) {
+        OutlinedCard(Modifier.fillMaxWidth().padding(12.dp)) {
+            Column(Modifier.padding(12.dp),
+                verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("Sparse Point Cloud Viewer", style=MaterialTheme.typography.titleLarge)
+                Text("Experimental two-view points, arbitrary size and orientation. " +
+                    "Drag to rotate; pinch to zoom. Not a finished 3D model.")
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Box {
+                        Button(onClick={ showChoices=true }) {
+                            Text("Saved scans (" + coordinator.savedClouds.size + ")")
+                        }
+                        DropdownMenu(expanded=showChoices,onDismissRequest={showChoices=false}) {
+                            for(entry in coordinator.savedClouds) {
+                                DropdownMenuItem(
+                                    text={ Text(entry.sourceKind + " · " + entry.runId.takeLast(8) +
+                                        " · " + entry.points + " pts") },
+                                    onClick={
+                                        showChoices=false
+                                        coordinator.openSavedCloud(entry)
+                                    })
+                            }
+                        }
+                    }
+                    Button(onClick=onImport) { Text("Import PLY") }
+                }
+                if (coordinator.viewerLoading) LinearProgressIndicator(
+                    modifier=Modifier.fillMaxWidth())
+                Text(coordinator.viewerStatus)
+                AndroidView(
+                    factory={ surface },
+                    update={ v ->
+                        coordinator.viewerCloud?.let { v.load(it) }
+                        v.pointRadius=size
+                        v.focusCluster=focus
+                        v.showColors=showColors
+                    },
+                    modifier=Modifier.fillMaxWidth().height(380.dp)
+                )
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Button(onClick={surface.reset()}) { Text("Reset View") }
+                    Button(onClick={focus=!focus}) {
+                        Text(if(focus) "Show All" else "Focus Cluster")
+                    }
+                    Button(onClick={showColors=!showColors}) {
+                        Text(if(showColors) "Monochrome" else "Point Colors")
+                    }
+                }
+                Text("Point size: " + size.toInt())
+                Slider(value=size,onValueChange={size=it},valueRange=1f..10f)
+                Button(onClick=onClose,modifier=Modifier.fillMaxWidth()) {
+                    Text("Close Viewer")
+                }
+            }
+        }
+    }
 }
