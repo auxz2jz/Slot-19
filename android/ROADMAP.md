@@ -174,3 +174,16 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Use camera-pose estimation with available scene support, but separately label/filter triangulated tracks by **target-region support in both images**, and export object-only experimental PLY and all-scene comparison with feature-count diagnostics; do not call object-only a mesh.
 - [ ] Provide a human-checkable overlay of source keypoint locations / kept-vs-rejected tracks to distinguish central object from table/background and catch false positives.
 - [ ] Maintain 9×6 25 mm checkerboard model separately; block camera intrinsics if lens/zoom/frame crop/aspect not proven compatible. Later plan robust multi-view SfM and bundle adjustment only after target-track evidence.
+
+
+## v0.8.0 experimental object-focused point clouds
+
+- [x] Implement real source-image ROI tool on selected two-view pair, with distinct touch rectangles on both source photos; no assumed centered object.
+- [x] Record 1:1 PLY-to-source matched feature image coordinates from actual triangulation; add run/source PLY hash and point order checks to prevent stale filtering.
+- [x] Filter existing XYZ only when corresponding feature lies inside BOTH object rectangles; save `sparse_object_focus.ply` separately; show retained/excluded counts and NO_POINTS outcome.
+- [x] Add saved viewer selection for original/full scene and filtered/object focus, and separate automatically versioned exported PLY name.
+- [x] Persist per-run object-focus selection/results/error and sparse projection map to latest/all diagnostic ZIPs; no original images exported.
+- [x] Pure-JVM ROI/test naming rules and guided user-testing instructions; Android ownership preserved.
+- [ ] GitHub Actions latest v0.8.0 compile/test and downloadable artifact hashes confirmed.
+- [ ] User physically draws correct boxes in 2 real photos, compares original vs filtered 3D clouds, exports standalone PLYs/ZIP and confirms no original PLY regression.
+- [ ] Later improve true object/background masks, camera-compatible intrinsic handling and multi-view SfM, but only after user feedback on ROI filtering quality.
