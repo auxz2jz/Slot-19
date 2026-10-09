@@ -560,8 +560,18 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
-        if (coordinator.previewFile.isBlank()) null
-        else BitmapFactory.decodeFile(coordinator.previewFile)
+        if (coordinator.previewFile.isBlank()) null else {
+            // ImageCapture can save 12MP+ JPEGs. Never decode full resolution
+            // merely to display a small Compose preview on the phone.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(coordinator.previewFile, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 800 || bounds.outHeight / sample > 800) {
+                sample *= 2
+            }
+            BitmapFactory.decodeFile(coordinator.previewFile,
+                BitmapFactory.Options().apply { inSampleSize = sample })
+        }
     }
 
     DisposableEffect(permissionGranted, preview) {
