@@ -140,6 +140,12 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var sparseAnalyzing by mutableStateOf(false)
         private set
+    var thirdViewAnalyzing by mutableStateOf(false)
+        private set
+    var thirdViewProgress by mutableStateOf(0f)
+        private set
+    var thirdViewMessage by mutableStateOf("Third-view geometry not checked yet")
+        private set
     var sparseProgress by mutableStateOf(0f)
         private set
     var sparseMessage by mutableStateOf("No sparse two-view analysis yet")
@@ -701,10 +707,53 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Validates two-view XYZ against later real saved photographs; never edits PLY. */
+    fun validateThirdView() {
+        if (thirdViewAnalyzing || sparseAnalyzing || geometryAnalyzing ||
+            liveSampling || smartSampling || importing || calibrating) {
+            status = "Finish other work before third-view verification"
+            return
+        }
+        val run=currentRun
+        if (run==null || !run.isClosed ||
+            !File(run.directory,"sparse_report.json").isFile()) {
+            status = "Generate a valid Sparse Two Views candidate first"
+            return
+        }
+        thirdViewAnalyzing = true
+        thirdViewProgress = 0f
+        thirdViewMessage = "Checking actual 3D-to-2D tracks in a third photograph..."
+        geometryWorker.execute {
+            try {
+                val report=SparseTwoViewAnalyzer().validateThirdView(run) {done,total ->
+                    ui {
+                        thirdViewProgress=if(total==0)0f else done.toFloat()/total
+                        thirdViewMessage="Third view " + done + "/" + total + " checked"
+                    }
+                }
+                ui {
+                    thirdViewMessage = report.optString("status") +
+                        " — supported third views: " +
+                        report.optInt("consistentThirdViews") + "/" +
+                        report.optInt("attemptedThirdViews") +
+                        "; calibration: " + report.optString("calibrationCompatibility") +
+                        ". See latest/all ZIP."
+                    status = "Third-view evidence saved; original sparse PLY unchanged."
+                }
+            } catch(ex:Exception) {
+                ui {
+                    thirdViewMessage="Third-view analysis failed: " +
+                        ex.javaClass.simpleName + ". Capture and saved PLY preserved."
+                    status = thirdViewMessage
+                }
+            } finally { ui { thirdViewAnalyzing=false } }
+        }
+    }
+
     fun exportSparsePly(uri: Uri) {
         val run = currentRun ?: return
-        if (sparseAnalyzing || geometryAnalyzing || liveSampling || smartSampling || importing)
-            return
+        if (sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            liveSampling || smartSampling || importing) return
         worker.execute {
             try {
                 val size = repository.exportSparsePly(run, uri)
@@ -1053,6 +1102,21 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Button(onClick={ coordinator.validateThirdView() },
+                        enabled=latest!=null && latest.isClosed &&
+                            coordinator.sparseAvailable &&
+                            !coordinator.liveSampling && !coordinator.smartSampling &&
+                            !coordinator.importing && !coordinator.sparseAnalyzing &&
+                            !coordinator.geometryAnalyzing && !coordinator.thirdViewAnalyzing &&
+                            !coordinator.calibrating) {
+                        Text(if(coordinator.thirdViewAnalyzing)
+                            "Checking third-view geometry..." else
+                            "Verify Sparse Points in Third View")
+                    }
+                    if(coordinator.thirdViewAnalyzing) LinearProgressIndicator(
+                        progress={coordinator.thirdViewProgress},
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.thirdViewMessage)
                     Button(onClick = {
                         coordinator.refreshClouds()
                         showCloudViewer = true
@@ -1134,7 +1198,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             Text("Export filenames automatically include the installed version, run ID (when applicable) and UTC time. Older run metadata keeps its original creation version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Reconstruction engines: NOT IMPLEMENTED.",
+            Text("Reconstruction: experimental two-view sparse points plus independent third-view pose check; no dense model.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -1164,7 +1228,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "7. Tap View Sparse Points — 3D: drag/pinch, switch saved runs, " +
             "and verify point colors/relative shape; if viewing fails use Open a PLY File. " +
             "8. Optionally calibrate using 12–20 images of the printed 9x6 checkerboard. " +
-            "Inspect accepted image count and RMS; calibration is not applied to sparse reconstruction yet.") },
+            "Inspect accepted image count and RMS; calibration is not applied to sparse reconstruction yet. " +
+            "9. After generating sparse PLY, tap Verify Sparse Points in Third View. " +
+            "Inspect successful third-view count or inconclusive reason in diagnostic ZIP. " +
+            "This checks geometry but is not a full 3D scan.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
