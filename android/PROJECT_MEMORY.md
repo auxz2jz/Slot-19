@@ -16,7 +16,7 @@ Android owns `android/` and `.github/workflows/android-build.yml` only, with pla
 - `CaptureOptions.kt`: mode-specific requested FPS and max frames; ranges 0.5..5.0 FPS step 0.5 and 10..300 frames step 10, separate persisted mode preferences. Default Live 1 FPS/30, Video 1 FPS/40, Smart capped at 0.5 full-res photos/sec/30. Smart is a quality/novelty selector, never forced scheduled video sampling.
 - `ScanRepository.kt`: per-run settings, frame times/count, estimated measured FPS from saved source timestamps, elapsed compute, brightness/edge and adjacent-duplicate pixel proxies, and `exportAllRunDiagnostics` that includes **every** completed run's manifest/result/events/test without private frames/videos.
 - MainActivity UI: `Live/Video/Smart` setting chips, rate and maximum sliders with honest recommendation text, `Export ALL Runs + FPS Comparison`. Original capture buttons unchanged.
-- CI run `37901552835` triggered from main merge; check actual result and artifact before reporting successful new APK. New pure JVM CaptureOptionsTest and existing selector/frame tests included.
+- GitHub Actions `37901552835` **SUCCESS** (JVM unit tests + debug APK). Artifact ID `11603001558`, name `video3d-android-v0.3.0-candidate`, APK 11,566,873 bytes, SHA256 `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`. Tested source preserved on `backup/android-v0.3.0-ci-candidate`. New pure JVM CaptureOptionsTest and existing selector/frame tests included.
 - Read `android/CAPTURE_RATE_TEST_PLAN.md` and `android/CHECKPOINT.md` for experiment and exact next step.
 
 ## Distinctions, known limitations
@@ -26,4 +26,4 @@ Android owns `android/` and `.github/workflows/android-build.yml` only, with pla
 - This remains capture-only: no point cloud, camera pose reconstruction, meshing, texture or laser.
 
 ## Exact next action
-Verify CI compiled v0.3.0, save APK/artifact source hash and candidate backup. User tests slider effects using identical video at 0.5,1,2,3 FPS and checks useful viewpoints/overlap, then exports the ALL Runs ZIP. Use evidence to tune capture rate and later add actual feature matching; do not mark v0.3 verified until user confirms. Windows not affected.
+Build verification DONE; user-device verification PENDING. User tests slider effects using identical video at 0.5,1,2,3 FPS and checks useful viewpoints/overlap, then exports the ALL Runs ZIP. Use evidence to tune capture rate and later add actual feature matching; do not mark v0.3 verified until user confirms. Windows not affected.
