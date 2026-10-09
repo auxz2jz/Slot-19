@@ -146,3 +146,15 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] GitHub CI `37917793167` build/test; record exact source commit and verified APK hash.
 - [ ] User real-device confirms that each new export says current version `v0.6.1` and second export gets a different name; new ZIP metadata reports current exporter and earlier scan creator distinctly.
 - [ ] Continue calibration/image geometry improvements only after v0.6.1 user verification, respecting real camera/lens/crop.
+
+
+## v0.7.0 — independent third-view consistency before denser SfM
+- [x] User confirmation and diagnostic ZIPs establish v0.6.1 export naming and app operation verified; source preserved at `backup/android-v0.6.1-user-verified-export-naming`.
+- [x] Real 158-vertex PLY / 300 frame run analyzed; camera calibration 1000×467 mismatches 720×1280 original video aspect — no automatic intrinsics application.
+- [x] Add optional **Verify Sparse Points in Third View** after a valid two-view candidate, without changing saved PLY or capture.
+- [x] Anchor feature-to-3D track mapping; match later real frames; estimate third pose using OpenCV PnP RANSAC, gate inlier count/ratio and reprojection; bound to four later samples.
+- [x] Save diagnostics `third_view_report.json`, `third_view_last_failure.json`, surface progress/results; include in both existing ZIP exports. Explicitly report mismatch/inconclusive and unknown scale.
+- [x] JVM tests for candidate indexing, weak PnP verdicts and rejected calibration aspect; version code 8/0.7.0, APK names continue auto-derived.
+- [ ] CI `37919747862` pass, archive tested build/app and SHA.
+- [ ] User tests third-view verification on textured camera-moving sample, weak/low-parallax sample, exports full ZIP, validates earlier capture/PLY/viewer/calibration features. NO exact scale / finished 3D claim.
+- [ ] After this test, improve camera metadata, EXIF/lens-zoom/intrinsics/crop matching; eventually multi-view sparse tracks/bundle adjustment and object-aware segmentation.
