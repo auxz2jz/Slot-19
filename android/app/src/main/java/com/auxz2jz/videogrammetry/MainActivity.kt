@@ -15,6 +15,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -30,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +51,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.nio.ByteBuffer
+import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
@@ -69,6 +73,12 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private val repository = ScanRepository(activity)
     private val worker = Executors.newSingleThreadExecutor()
     private val sampling = AtomicBoolean(false)
+    private val smartSelecting = AtomicBoolean(false)
+    private val smartInFlight = AtomicBoolean(false)
+    private val smartSelector = SmartFrameSelector()
+    private var smartLastAnalysisMs = Long.MIN_VALUE
+    private var lastGuidanceReason = ""
+    private var smartImageCapture: ImageCapture? = null
     private var active: ScanRun? = null
     private var lastSampleMs = Long.MIN_VALUE
     private var provider: ProcessCameraProvider? = null
@@ -82,6 +92,14 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var importing by mutableStateOf(false)
         private set
     var liveSampling by mutableStateOf(false)
+        private set
+    var smartSampling by mutableStateOf(false)
+        private set
+    var smartAvailable by mutableStateOf(false)
+        private set
+    var smartGuidance by mutableStateOf("Move slowly around the object; the app will suggest the next photo")
+        private set
+    var smartProgress by mutableStateOf(0f)
         private set
     var visibleCount by mutableStateOf(currentRun?.frameCount ?: 0)
         private set
@@ -123,7 +141,21 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(activity, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
                 cameraBound = true
-                status = "Camera preview ready — move around a stationary object."
+                // Leave the verified Preview + Analysis pair bound even if the
+                // optional still-photo use case is unsupported on this camera.
+                try {
+                    val imageCapture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build()
+                    cameraProvider.bindToLifecycle(activity, CameraSelector.DEFAULT_BACK_CAMERA, imageCapture)
+                    smartImageCapture = imageCapture
+                    smartAvailable = true
+                } catch (smartError: Exception) {
+                    smartImageCapture = null
+                    smartAvailable = false
+                }
+                status = if (smartAvailable) "Camera ready — smart auto photos available"
+                    else "Camera ready. Smart still capture not supported on this camera."
             } catch (exc: Exception) {
                 cameraBound = false
                 status = "Camera unavailable: " + exc.javaClass.simpleName
@@ -133,12 +165,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     fun unbindCamera() {
         cameraBound = false
-        provider?.unbindAll()
+        if (smartSelecting.get()) stopSmart()
         if (sampling.get()) stopLive()
+        provider?.unbindAll()
+        smartAvailable = false
+        smartImageCapture = null
     }
 
     fun startLive() {
-        if (!cameraBound || importing || liveSampling) {
+        if (!cameraBound || importing || liveSampling || smartSampling) {
             status = "Camera is not ready or capture already active"
             return
         }
@@ -169,6 +204,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     private fun analyze(image: ImageProxy) {
+        if (smartSelecting.get()) {
+            analyzeSmart(image)
+            return
+        }
         if (!sampling.get()) return
         val run = active ?: return
         val now = SystemClock.elapsedRealtime()
@@ -191,6 +230,160 @@ class CaptureCoordinator(private val activity: MainActivity) {
         } finally {
             bitmap.recycle()
         }
+    }
+
+    /** Third capture mode; uses actual CameraX full-resolution JPEG ImageCapture. */
+    fun startSmart() {
+        if (!cameraBound || !smartAvailable || smartImageCapture == null ||
+            smartSampling || liveSampling || importing) {
+            status = "Smart capture unavailable or another mode is already running"
+            return
+        }
+        val run = repository.create("smart_auto")
+        currentRun = run
+        active = run
+        visibleCount = 0
+        previewFile = ""
+        smartProgress = 0f
+        lastGuidanceReason = ""
+        smartSelector.reset()
+        smartLastAnalysisMs = Long.MIN_VALUE
+        run.event("USER_ACTION", "START_SMART_AUTO_CAPTURE")
+        run.event("OPERATION_START", "SMART_AUTO_CAPTURE",
+            JSONObject().put("maxPhotos", SmartFrameSelector.MAX_SHOTS)
+                .put("cameraOutput", "ImageCapture original JPEG")
+                .put("guidance", "approximate image change, not tracked position"))
+        smartSelecting.set(true)
+        smartSampling = true
+        smartGuidance = "Hold steady for the first clear photo"
+        status = "Smart Auto Capture active"
+    }
+
+    fun stopSmart() {
+        if (!smartSelecting.getAndSet(false) && !smartSampling) return
+        smartSampling = false
+        val run = active
+        run?.event("USER_ACTION", "STOP_SMART_AUTO_CAPTURE")
+        if (smartInFlight.get()) {
+            status = "Finishing the last smart photo..."
+        } else if (run != null) {
+            worker.execute { finishSmart(run, true) }
+        }
+    }
+
+    private fun analyzeSmart(image: ImageProxy) {
+        val run = active ?: return
+        if (smartInFlight.get() || !smartSelecting.get()) return
+        val now = SystemClock.elapsedRealtime()
+        if (smartLastAnalysisMs != Long.MIN_VALUE && now - smartLastAnalysisMs < 350L) return
+        smartLastAnalysisMs = now
+        // Sample RGBA camera analysis memory only; no UI overlay, JPEG encoding,
+        // or full-resolution Bitmap allocation on every preview frame.
+        val plane = image.planes[0]
+        if (plane.pixelStride != 4 || plane.rowStride < image.width * 4)
+            throw IllegalStateException("Camera RGB layout cannot be analyzed")
+        val buffer = plane.buffer
+        val gray = IntArray(SmartFrameSelector.WIDTH * SmartFrameSelector.HEIGHT)
+        for (y in 0 until SmartFrameSelector.HEIGHT) {
+            val iy = (y * image.height) / SmartFrameSelector.HEIGHT
+            for (x in 0 until SmartFrameSelector.WIDTH) {
+                val ix = (x * image.width) / SmartFrameSelector.WIDTH
+                val pos = iy * plane.rowStride + ix * plane.pixelStride
+                val r = buffer.get(pos).toInt() and 255
+                val g = buffer.get(pos + 1).toInt() and 255
+                val b = buffer.get(pos + 2).toInt() and 255
+                gray[y * SmartFrameSelector.WIDTH + x] = (r * 30 + g * 59 + b * 11) / 100
+            }
+        }
+        val signature = SmartFrameSelector.signature(gray)
+        val decision = smartSelector.decide(signature, now)
+        if (lastGuidanceReason != decision.reason) {
+            lastGuidanceReason = decision.reason
+            run.event("FRAME_DECISION", "SMART_VIEW_ASSESSMENT",
+                JSONObject().put("reason", decision.reason)
+                    .put("imageChangeProxy", decision.novelty)
+                    .put("instability", decision.instability)
+                    .put("sharpnessProxy", decision.sharpness)
+                    .put("meanBrightness", decision.brightness))
+        }
+        ui {
+            smartProgress = decision.viewProgress
+            smartGuidance = decision.guidance
+        }
+        if (decision.accept && smartInFlight.compareAndSet(false, true)) {
+            requestSmartPhoto(run, signature, decision, now)
+        }
+    }
+
+    private fun requestSmartPhoto(
+        run: ScanRun, signature: SmartSignature, decision: SmartDecision, timeMs: Long
+    ) {
+        val capture = smartImageCapture
+        if (capture == null) {
+            smartSelecting.set(false)
+            smartInFlight.set(false)
+            run.event("ERROR", "SMART_SHUTTER", JSONObject().put("errorType", "ImageCaptureUnavailable"))
+            finishSmart(run, false)
+            return
+        }
+        val pending = File(run.directory, "pending_photo_" + System.nanoTime() + ".jpg")
+        run.event("STATE_TRANSITION", "SMART_SHUTTER_REQUESTED",
+            JSONObject().put("viewChange", decision.novelty))
+        try {
+            capture.takePicture(
+                ImageCapture.OutputFileOptions.Builder(pending).build(),
+                worker,
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        try {
+                            if (run.isClosed) {
+                                pending.delete()
+                                return
+                            }
+                            val count = run.saveCapturedJpeg(pending, timeMs, decision)
+                            smartSelector.confirmedSaved(signature, timeMs)
+                            ui {
+                                visibleCount = count
+                                previewFile = run.recentPreview()?.absolutePath ?: ""
+                                smartGuidance = "Photo " + count + " saved — move to a new angle"
+                                smartProgress = 0f
+                            }
+                            if (count >= SmartFrameSelector.MAX_SHOTS) smartSelecting.set(false)
+                        } catch (exc: Exception) {
+                            smartSelecting.set(false)
+                            run.event("ERROR", "SMART_IMAGE_CAPTURE_VALIDATE",
+                                JSONObject().put("errorType", exc.javaClass.simpleName))
+                        } finally {
+                            smartInFlight.set(false)
+                            if (!smartSelecting.get()) finishSmart(run, run.frameCount > 0)
+                        }
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        pending.delete()
+                        smartSelecting.set(false)
+                        smartInFlight.set(false)
+                        run.event("ERROR", "SMART_SHUTTER",
+                            JSONObject().put("errorType", exception.javaClass.simpleName)
+                                .put("cameraErrorCode", exception.imageCaptureError))
+                        finishSmart(run, false)
+                    }
+                })
+        } catch (exc: Exception) {
+            pending.delete()
+            smartSelecting.set(false)
+            smartInFlight.set(false)
+            run.event("ERROR", "SMART_SHUTTER",
+                JSONObject().put("errorType", exc.javaClass.simpleName))
+            finishSmart(run, false)
+        }
+    }
+
+    private fun finishSmart(run: ScanRun, allowSuccess: Boolean) {
+        if (run.isClosed) return
+        smartSelecting.set(false)
+        val success = run.finish(allowSuccess, if (allowSuccess) "" else "Smart photo failed")
+        finishUi(run, success)
     }
 
     /** Read CameraX's raw RGBA plane without drawing preview overlays onto it. */
@@ -219,7 +412,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun importVideo(uri: Uri) {
-        if (importing || liveSampling) {
+        if (importing || liveSampling || smartSampling) {
             status = "Finish current capture first"
             return
         }
@@ -260,6 +453,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     val count = run.frameCount
                     ui {
                         visibleCount = count
+                        if (count == 1 || count % 5 == 0)
+                            previewFile = run.recentPreview()?.absolutePath ?: ""
                         status = "Video: " + count + " frames saved"
                     }
                 }
@@ -285,6 +480,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
             previewFile = run.recentPreview()?.absolutePath ?: ""
             sampling.set(false)
             liveSampling = false
+            smartSampling = false
             importing = false
             status = if (success) "Saved and validated " + run.frameCount +
                 " frames. No 3D model generated."
@@ -317,6 +513,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     fun shutdown() {
         sampling.set(false)
+        smartSelecting.set(false)
         provider?.unbindAll()
         val run = active
         if (run != null && !run.isClosed)
@@ -359,7 +556,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.1.0 CANDIDATE — frame capture only")
+            Text("Android v0.2.0 CANDIDATE — Smart Auto Capture experimental; no 3D reconstruction")
             Text("Keep the object stationary; move the phone slowly around it.")
             if (!permissionGranted) {
                 Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
@@ -372,20 +569,39 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Button(onClick = { coordinator.stopLive() }) { Text("Stop Live Sampling") }
                 } else {
                     Button(onClick = { coordinator.startLive() },
-                        enabled = coordinator.cameraBound && !coordinator.importing) {
+                        enabled = coordinator.cameraBound && !coordinator.importing && !coordinator.smartSampling) {
                         Text("Start Live Sampling")
                     }
                 }
             }
+            if (coordinator.smartSampling) {
+                Button(onClick = { coordinator.stopSmart() }) { Text("Stop Smart Auto Capture") }
+            } else {
+                Button(onClick = { coordinator.startSmart() },
+                    enabled = coordinator.smartAvailable && !coordinator.liveSampling && !coordinator.importing) {
+                    Text("Start Smart Auto Capture")
+                }
+            }
+            if (coordinator.smartSampling) {
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Next photo guidance: " + coordinator.smartGuidance)
+                        LinearProgressIndicator(
+                            progress = { coordinator.smartProgress },
+                            modifier = Modifier.fillMaxWidth())
+                        Text("View-change indicator (approximate, not degrees or physical distance)")
+                    }
+                }
+            }
             Button(onClick = { videoPicker.launch(arrayOf("video/*")) },
-                enabled = !coordinator.liveSampling && !coordinator.importing) {
+                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing) {
                 Text("Choose Video")
             }
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(coordinator.status)
                     Text("Saved frames: " + coordinator.visibleCount)
-                    Text("Live: max 30/1.2 s. Recording: max 40/1 s.")
+                    Text("Live: max 30/1.2 s. Smart: 30 full-quality JPEGs. Video: max 40/1 s.")
                 }
             }
             if (latestBitmap != null) {
@@ -394,11 +610,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Modifier.fillMaxWidth().height(185.dp), contentScale = ContentScale.Fit)
             }
             Button(onClick = { showGuide = true },
-                enabled = !coordinator.liveSampling && !coordinator.importing) {
+                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.1.0-test-diagnostics.zip")
+                exportPicker.launch("Android-v0.2.0-test-diagnostics.zip")
             }, enabled = latest != null && latest.isClosed) {
                 Text("Export Test + Diagnostics")
             }
@@ -409,9 +625,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
 
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.1.0") },
+        title = { Text("Test This Version — v0.2.0") },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
-            "or Start Live Sampling, move around the object, and Stop.\n\n" +
+            "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
+            "when the image is steady, sharp and sufficiently different.\n\n" +
             "2. Wait until the saved/validated frame count appears. Look at the saved-frame preview " +
             "for correct orientation and sharpness.\n\n" +
             "3. Tap Frames Look Correct only if the result is actually correct. " +
