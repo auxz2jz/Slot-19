@@ -1,5 +1,14 @@
 # Multi-Engine Video Photogrammetry Lab
 
+## Platform navigation — Android and Windows are independent
+
+**Android app:** `android/` (Kotlin + Jetpack Compose + CameraX), with its own `android/PROJECT_MEMORY.md`, `android/CHECKPOINT.md`, `android/ROADMAP.md`, `android/DIAGNOSTICS_AND_TESTING.md` and Android-only GitHub Actions APK workflow.
+
+**Windows application:** existing Python source in historical `videogrammetry/`, `tests/` and `pyproject.toml`; historical root project documents remain Windows-specific until its own agent decides otherwise. Read `windows/OWNERSHIP.md`. Its pre-Android state is backed up on `backup/pre-android-windows-v0.1.0`. No user-verified Windows baseline.
+
+**Shared product decisions:** `shared/`. There are independent versions, candidate builds, tests, checkpoints and verified baselines for each platform; neither implementation is allowed to overwrite the other.
+
+
 A **new, independent** local-first photogrammetry project. The existing Android 3D Scan Studio in `auxz2jz/Slot-8` is a read-only reference and must not be changed by this project.
 
 ## Mission
