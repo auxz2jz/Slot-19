@@ -5,9 +5,10 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from uuid import uuid4
 
 from . import __version__
-from .capture import ENGINE_NAMES, extract_frames, export_diagnostics, tool_status
+from .capture import ENGINE_NAMES, EventLog, extract_frames, export_diagnostics, tool_status
 
 
 def print_json(item: object) -> None:
@@ -25,6 +26,9 @@ def test_version(project: Path, recording: str) -> int:
     print("2. Recorded-video extraction: verify actual image files and manifest.")
     result = extract_frames(project, "recording", recording, interval=1.0, max_frames=24)
     run = project.expanduser().resolve() / "runs" / result["runId"]
+    audit = EventLog(project.expanduser().resolve(), run, result["runId"])
+    test_session_id = uuid4().hex
+    audit.emit("TEST_STARTED", testId="v0.1.0_recorded_video", testSessionId=test_session_id)
     steps = [{"stepId": "dependency", "status": "PASS", "source": "AUTO_VERIFIED"}]
     if result["status"] != "PASS":
         steps.append({"stepId": "recording", "status": "FAIL", "source": "AUTO_FAIL",
@@ -56,7 +60,13 @@ def test_version(project: Path, recording: str) -> int:
                 "source": "MANUAL_PASS" if manual_pass else ("MANUAL_FAIL" if answer else "UNTESTED"),
             })
             verdict = "PASS" if manual_pass else ("FAIL" if answer else "PARTIAL")
+    for step in steps:
+        audit.emit("TEST_VERIFICATION", testSessionId=test_session_id, testStepId=step["stepId"],
+                   result=step["status"], resultSource=step["source"])
+    audit.emit("TEST_RESULT", testSessionId=test_session_id, result=verdict,
+               testId="v0.1.0_recorded_video")
     test_result = {
+        "testSessionId": test_session_id,
         "testId": "v0.1.0_recorded_video", "runId": result["runId"],
         "appVersion": __version__, "status": verdict, "steps": steps,
         "note": "Test PASS is not a USER VERIFIED BASELINE until user explicitly confirms it.",
