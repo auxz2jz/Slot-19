@@ -46,3 +46,22 @@ Each mode keeps its own settings across app sessions. Slides/settings apply to t
 6. Export **ALL Runs + FPS Comparison**, verify ZIP opens, and upload it back with your observations. This is the best evidence for comparing sampled rates.
 
 See `CHECKPOINT.md`, `PROJECT_MEMORY.md`, `ROADMAP.md`, `CAPTURE_RATE_TEST_PLAN.md` and `DIAGNOSTICS_AND_TESTING.md` for development handoff. Windows/Codex must only touch its owned historical root Python source.
+
+
+## New experimental v0.4.0 ORB feature matching
+
+**User-verified capture fallback is Android v0.3.0.** Exact source SHA `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` and original APK SHA256 `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938` are preserved in `backup/android-v0.3.0-user-verified-capture`.
+
+The Android v0.4.0 **candidate** adds an independent **Analyze Latest Run — ORB Geometry** action. After you successfully capture or import photos, tap that button. It detects actual ORB visual features in adjacent saved photos, tests Hamming descriptor correspondences with a Lowe-style ratio filter, then computes fundamental-matrix RANSAC inlier counts and an epipolar-consistency verdict. This is NOT a point cloud, mesh, proven camera pose, or measurement of percent object scanned. Flat backgrounds, nearly stationary camera and featureless surfaces may mislead it; weak geometry does not mean the camera failed to save photos.
+
+**Device test:**
+1. Complete a small 10–30-image Live, Video or Smart capture of a stationary object, moving the camera gradually and keeping the object prominent.
+2. Tap **Analyze Latest Run — ORB Geometry**. Verify the progress and final supported-pair count; do not expect a finished 3D model.
+3. Repeat with a static or featureless object; see whether it reports weak/inconclusive matches. A static image may still match well without useful triangulation.
+4. Tap **Export Test + Diagnostics** or **Export ALL Runs + FPS Comparison**. New reports are `geometry_report.json` and `geometry_pairs.jsonl`; the ZIP includes metrics and logs only, not original photos.
+5. Send the ZIP and your observed camera/photo behavior to the Android developer. Report any OpenCV loading error, UI freeze or unusual image framing. Re-test all three previously working capture methods.
+6. V0.4.0 is not user-verified until you test and explicitly confirm it; return to preserved v0.3.0 source/APK if this candidate fails.
+
+**Build note:** Official OpenCV 4.12 Android AAR adds native code; a universal debug APK is significantly larger than older releases. ARM64-specific build outputs are intended for modern ARM64 phones, with universal fallback. If updating a GitHub-signed debug APK requires uninstalling the previous version, export important data first; uninstall may delete app-private captures.
+
+See `ORB_GEOMETRY_PLAN.md`, `CHECKPOINT.md` and `DIAGNOSTICS_AND_TESTING.md` for algorithms, source fingerprint and tests. **Windows implementation is unchanged.**
