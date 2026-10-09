@@ -927,6 +927,64 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun analyzeObjectMultiView() {
+        val run=currentRun ?: return
+        if(multiviewWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            objectFocusWorking || geometryAnalyzing || importing ||
+            liveSampling || smartSampling || calibrating) {
+            multiviewMessage="Finish the active operation first"
+            return
+        }
+        if(!run.isClosed || !earlyObjectSelected || !reconstructedAvailable) {
+            multiviewMessage="Select object BEFORE Sparse 3D and analyze the ROI-first pair first"
+            return
+        }
+        multiviewWorking=true
+        multiviewProgress=0f
+        multiviewMessage="Registering additional camera positions using matched 3D anchors..."
+        geometryWorker.execute {
+            try {
+                val result=SparseTwoViewAnalyzer().analyzeObjectMultiView(run) { done,total ->
+                    ui {
+                        multiviewProgress=if(total==0)0f else done.toFloat()/total
+                        multiviewMessage="Registered/checked "+done+" / "+total+" extra photographs"
+                    }
+                }
+                ui {
+                    multiviewAvailable=File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+                    savedClouds=repository.savedPlyEntries()
+                    multiviewMessage=result.optString("status")+": "+
+                        result.optInt("baselinePoints")+" original target points + "+
+                        result.optInt("newPointsFromAdditionalFrames")+" new XYZ tracks from "+
+                        result.optInt("viewsContributingNewPoints")+" additional camera views. "+
+                        "Unknown physical scale; verify shape manually."
+                    status="Multi-view experiment "+result.optString("status")+
+                        ". Export reports and each PLY separately."
+                }
+            } catch(ex:Exception) {
+                ui {
+                    multiviewAvailable=File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+                    multiviewMessage="Multi-view FAILED: "+ex.javaClass.simpleName+
+                        ". Original full-scene and object 2-view clouds untouched; export diagnostics."
+                }
+            } finally { ui { multiviewWorking=false } }
+        }
+    }
+
+    fun exportSeparateCloud(uri: Uri, name:String) {
+        val run=currentRun ?: return
+        if(multiviewWorking || sparseAnalyzing || objectFocusWorking ||
+            thirdViewAnalyzing || importing || liveSampling || smartSampling)return
+        worker.execute {
+            try {
+                val n=repository.exportSeparatePly(run,uri,name)
+                ui { status="Exported "+name+" ("+n+" bytes)" }
+            } catch(ex:Exception) {
+                ui { status="PLY export failed: "+ex.javaClass.simpleName }
+            }
+        }
+    }
+
     fun exportObjectFocusPly(uri: Uri) {
         val run=currentRun ?: return
         if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing || importing)return
