@@ -1177,6 +1177,45 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Text("Object Focus — experimental", style=MaterialTheme.typography.titleMedium)
+                    Text("Draw the object rectangle in BOTH saved source photographs. " +
+                        "Points must match inside both rectangles; background features " +
+                        "can still contribute to camera pose. Not true segmentation.")
+                    Button(onClick={focusPhotos=coordinator.objectFocusSourcePhotos()},
+                        enabled=latest != null && latest.isClosed &&
+                            coordinator.sparseAvailable &&
+                            !coordinator.sparseAnalyzing && !coordinator.thirdViewAnalyzing &&
+                            !coordinator.geometryAnalyzing && !coordinator.objectFocusWorking &&
+                            !coordinator.importing && !coordinator.liveSampling &&
+                            !coordinator.smartSampling) {
+                        Text("Select Object in Two Photos")
+                    }
+                    if(coordinator.objectFocusWorking) LinearProgressIndicator(
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.objectFocusMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val focused=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id && it.file.name=="sparse_object_focus.ply"
+                        }
+                        if(focused!=null) {
+                            coordinator.openSavedCloud(focused)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.objectFocusAvailable &&
+                        !coordinator.objectFocusWorking) {
+                        Text("View Object-Focused Points — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let { run ->
+                            val name=ExportNames.objectFocusPly(BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("OBJECT_FOCUS_PLY",name)
+                            objectPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.objectFocusAvailable &&
+                        !coordinator.objectFocusWorking && !coordinator.sparseAnalyzing) {
+                        Text("Export Object-Focused PLY — Experimental")
+                    }
                     Button(onClick={ coordinator.validateThirdView() },
                         enabled=latest!=null && latest.isClosed &&
                             coordinator.sparseAvailable &&
