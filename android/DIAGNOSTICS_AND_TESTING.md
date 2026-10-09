@@ -81,3 +81,33 @@ No true geometric overlap verification or orientation/translation estimate. A pr
 **Persistence:** each unique run under app-private capture_runs persists unless app data is cleared. Global events are capped/rotated independently. Every single-run diagnostic export represents one run. The new all-run export includes all completed runs without camera image/video bytes. APK debug signing may differ between builds; backup/export runs before uninstalling.
 
 **Outstanding:** add true image correspondence/inlier/RANSAC quality measurements, user-selectable per-frame preview/contact sheet, export completion proof in ZIP, Android instrumentation tests across modes and frame-rate limits. Preserve verified v0.2 baseline when implementing these future features.
+
+
+## v0.4.0 ORB/Hamming + RANSAC geometric consistency (EXPERIMENTAL)
+
+**User-verified version is v0.3.0 capture/settings only.** Source `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` is preserved. New v0.4 analysis is not device-verified. See `android/ORB_GEOMETRY_PLAN.md`.
+
+### Actual button and outputs
+
+- Complete one of the three existing capture modes; leave a valid `result.json` with at least two frames. Press **Analyze Latest Run — ORB Geometry**.
+- The app uses a *separate thread* and keeps an on-screen per-pair progress bar. The underlying captured JPGs, manifest, file hashes, capture validation PASS and the old frame-rate settings are not changed.
+- Only saved JPEG image bytes, not browser/UI screenshot overlays, are analyzed. Per pair: resize to at most 640px max dimension, detect ≤~800 ORB keypoints, derive binary descriptors, knn BFMatcher (Hamming) with 0.75 ratio test, fundamental-matrix RANSAC with 1.5px threshold and 0.99 confidence.
+- Bounded at most 80 image *pairs*, selecting indices from first to last. For each evaluated pair the `geometry_pairs.jsonl` stores frame indices/names, keypoints A/B, ratio-test match count, F RANSAC inlier count, ratio of inliers to ratio-test matches, conservative status and explanatory limitation.
+- Aggregated `geometry_report.json`: source frame count, pair count, skipped comparisons, epipolar-consistent count, weak/unavailable count, accumulated matches/inliers, `COMPLETED` status, timestamp/analysis ID, and caveat that this does not prove object-only overlap or 3D reconstruction. Failures use `geometry_last_failure.json` and persistent `ERROR` event; a bad geometric estimate does not mark an otherwise valid captured run FAIL.
+- Both Export Test + Diagnostics and Export ALL Runs + FPS Comparison include geometry report/pair JSONL alongside original capture reports; original photos/videos are excluded. Old v0.3 runs may be analyzed *if* existing app-private storage survives APK update.
+
+### Guided physical tests
+
+1. With a textured stationary object, capture ~10–30 neighboring photos or video frames while moving the camera slowly. Tap Analyze Latest Run. Record number of analyzed pairs, supported pairs and warnings; inspect JSONL.
+2. Capture a nearly unchanged viewpoint. Features might match consistently even with no parallax! **Do not interpret good RANSAC inliers as successful triangulation or camera translation.** Compare with differing views.
+3. Capture a featureless/blurred surface or rapid movement; should result in an honest `TOO_FEW_FEATURES`, `INSUFFICIENT_MATCHES`, or `RANSAC_REJECTED`, not an invented success.
+4. Export diagnostics; inspect `geometry_report.json` and `geometry_pairs.jsonl`; if native OpenCV cannot load, capture should still work and geometry failure should be visible/logged.
+5. Re-test all three capture modes, FPS sliders, latest-run ZIP and all-run ZIP to rule out regressions.
+6. Explicitly report visual result and whether Android OpenCV works on device; only then mark v0.4 user-verified.
+
+### Diagnostic honesty and remaining work
+- Fundamental RANSAC inliers are **2D epipolar-consistency checks**, not actual 3D points, real angular displacement, intrinsic-corrected camera poses, pure object mask overlap, coverage percentage, or successful point-cloud/mesh generation.
+- Flat scenes, repeated texture, dominant background features, pure camera rotation and uncalibrated intrinsics can yield high epipolar inliers with poor SfM triangulation; F may reject legitimate low-baseline views. `EPIPOLAR_CONSISTENT` is a *pair verdict*, not a user scan PASS.
+- JPEG Smart capture EXIF orientation is not yet normalized before ORB matching; check physical orientation in device tests.
+- The existing Test This Version manual `Frames Look Correct` validates capture results only; it does not automatically confirm geometry report quality. Geometry analysis must have its own COMPLETED status and the user must inspect it separately.
+- CI compiles tests on JVM including pure `GeometryPolicyTest`. There is **no OpenCV native end-to-end instrumented test** in GitHub CI; runtime load and output meaningfulness are user-device test targets.
