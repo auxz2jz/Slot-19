@@ -43,7 +43,8 @@ class ScanRepository(private val context: Context) {
         require(runs.isNotEmpty()) { "No completed runs" }
         val files = listOf("manifest.json", "result.json", "events.jsonl",
             "test_results.json", "test_report.txt",
-            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json")
+            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
+            "sparse_report.json", "sparse_last_failure.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -86,12 +87,36 @@ class ScanRepository(private val context: Context) {
                     }
                 }
                 add("all_runs_summary.json", JSONObject()
-                    .put("appVersion", "android-0.4.0")
+                    .put("appVersion", "android-0.5.0")
                     .put("includedRunCount", runs.size)
                     .put("runs", rows).toString(2).toByteArray())
             }
         }
         return runs.size
+    }
+
+    /** PLY is intentional user export, NOT in redacted diagnostic ZIPs. */
+    fun exportSparsePly(run: ScanRun, uri: Uri): Long {
+        val cloud = File(run.directory, "sparse_two_view.ply")
+        check(run.isClosed && cloud.isFile && cloud.length() > 150) {
+            "No valid sparse PLY exists for this run"
+        }
+        run.event("USER_ACTION", "EXPORT_SPARSE_PLY",
+            JSONObject().put("bytes", cloud.length()))
+        try {
+            val destination = context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Cannot open selected PLY destination")
+            val length = destination.use { output ->
+                cloud.inputStream().use { input -> input.copyTo(output) }
+            }
+            run.event("EXPORT_RESULT", "SPARSE_PLY",
+                JSONObject().put("success",true).put("bytes",length))
+            return length
+        } catch (ex: Exception) {
+            run.event("ERROR", "SPARSE_PLY_EXPORT",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
     }
 
     fun latest(): ScanRun? {
@@ -119,7 +144,8 @@ class ScanRepository(private val context: Context) {
         run.event("USER_ACTION", "EXPORT_TEST_AND_DIAGNOSTICS")
         run.event("OPERATION_START", "DIAGNOSTIC_EXPORT")
         val names = listOf("manifest.json", "result.json", "events.jsonl", "test_results.json", "test_report.txt",
-            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json")
+            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
+            "sparse_report.json", "sparse_last_failure.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)
@@ -132,7 +158,7 @@ class ScanRepository(private val context: Context) {
                         zip.closeEntry()
                         total += bytes.size
                     }
-                    entry("README.txt", ("Android Video 3D Capture Lab v0.4.0 diagnostics.\n" +
+                    entry("README.txt", ("Android Video 3D Capture Lab v0.5.0 diagnostics.\n" +
                         "No source video, camera image, filename or private URI included.\n").toByteArray())
                     names.forEach { name ->
                         val file = File(run.directory, name)
@@ -208,7 +234,7 @@ class ScanRun internal constructor(
             .put("sequenceNumber", ++sequence)
             .put("timestampUtcMs", System.currentTimeMillis())
             .put("monotonicTimeMs", SystemClock.elapsedRealtime() - startedMs)
-            .put("appVersion", "android-0.4.0")
+            .put("appVersion", "android-0.5.0")
             .put("sessionId", sessionId)
             .put("correlationId", id)
             .put("state", previousState)
@@ -341,7 +367,7 @@ class ScanRun internal constructor(
         if (brightness.isNotEmpty()) quality.put("meanBrightness", brightness.average())
         val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAtMs
         File(directory, "manifest.json").writeText(JSONObject()
-            .put("schemaVersion", 1).put("appVersion", "android-0.4.0")
+            .put("schemaVersion", 1).put("appVersion", "android-0.5.0")
             .put("runId", id).put("sourceKind", sourceKind)
             .put("requestedFps", options?.targetFps)
             .put("requestedMaxFrames", options?.maxFrames)
@@ -409,7 +435,7 @@ class ScanRun internal constructor(
         val passed = objective && looksCorrect
         val testStatus = if (passed) "PASS" else "FAIL"
         File(directory, "test_results.json").writeText(JSONObject()
-            .put("testId", "android_v0.4.0_capture")
+            .put("testId", "android_v0.5.0_capture")
             .put("testSessionId", UUID.randomUUID().toString())
             .put("runId", id).put("objectiveOutputValid", objective)
             .put("visualResultSource", if (looksCorrect) "MANUAL_PASS" else "MANUAL_FAIL")
@@ -417,7 +443,7 @@ class ScanRun internal constructor(
             .put("note", "A PASS does not establish user-verified baseline without user confirmation.")
             .toString(2))
         File(directory, "test_report.txt").writeText(
-            "Android v0.4.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
+            "Android v0.5.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
             "Output files/hashes validated: $objective\nVisual confirmation: $looksCorrect\n" +
             "Test: $testStatus\n")
         event("TEST_VERIFICATION", "VALIDATE_CAPTURE", JSONObject()
