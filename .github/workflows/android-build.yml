@@ -44,9 +44,9 @@ jobs:
         run: |
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           mkdir -p android-artifact
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/Video3DCapture-Android-v0.1.0-CANDIDATE.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/Video3DCapture-Android-v0.2.0-CANDIDATE.apk
           cd android-artifact
-          sha256sum Video3DCapture-Android-v0.1.0-CANDIDATE.apk > SHA256SUMS.txt
+          sha256sum Video3DCapture-Android-v0.2.0-CANDIDATE.apk > SHA256SUMS.txt
           ls -lh
       - name: Upload Android APK candidate
         uses: actions/upload-artifact@v4
