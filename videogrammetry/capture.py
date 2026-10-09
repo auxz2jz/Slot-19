@@ -270,25 +270,40 @@ def extract_frames(
 
 
 def export_diagnostics(project: Path, run_id: str) -> Path:
+    """Record the export attempt, then build a redacted ZIP without source frames."""
     if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z_[a-f0-9]{10}", run_id):
         raise ValueError("Invalid run ID")
     root = Path(project).expanduser().resolve()
     run_dir = root / "runs" / run_id
     if not (run_dir / "run_result.json").is_file():
         raise FileNotFoundError("Run report does not exist")
+    log = EventLog(root, run_dir, run_id)
+    log.emit("USER_ACTION", requestedOperation="EXPORT_DIAGNOSTICS")
     exports = root / "exports"
     exports.mkdir(parents=True, exist_ok=True)
     destination = exports / f"diagnostics_{run_id}.zip"
     if destination.exists():
+        log.emit("ERROR", errorType="FileExistsError", errorMessage="Export already exists")
         raise FileExistsError("Export already exists; old reports are never overwritten")
     files = ["run_result.json", "frames_manifest.json", "events.jsonl",
              "test_results.json", "test_report.txt"]
-    with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("README.txt", "Video Photogrammetry v0.1.0 diagnostics. No source video or frame images included.\n")
-        for filename in files:
-            file = run_dir / filename
-            if file.is_file():
-                archive.write(file, arcname=filename)
-    if destination.stat().st_size == 0:
-        raise RuntimeError("Empty diagnostics export")
-    return destination
+    log.emit("OPERATION_START", operation="EXPORT_DIAGNOSTICS", includesSourceMedia=False)
+    try:
+        with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("README.txt", "Video Photogrammetry v0.1.0 diagnostics. No source video or frame images included.\n")
+            for filename in files:
+                file = run_dir / filename
+                if file.is_file():
+                    archive.write(file, arcname=filename)
+        if destination.stat().st_size == 0:
+            raise RuntimeError("Empty diagnostics export")
+        log.emit("OPERATION_RESULT", success=True, operation="EXPORT_DIAGNOSTICS",
+                 bytes=destination.stat().st_size)
+        # Capture the export's own verified-completion event too.
+        with zipfile.ZipFile(destination, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.write(run_dir / "events.jsonl", arcname="events_after_export.jsonl")
+        return destination
+    except Exception as exc:
+        log.emit("ERROR", operation="EXPORT_DIAGNOSTICS",
+                 errorType=type(exc).__name__, errorMessage="Diagnostics export failed")
+        raise
