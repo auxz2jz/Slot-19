@@ -54,3 +54,16 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 ## Longer term panorama-style guidance
 - [ ] Investigate ORB/AKAZE/SIFT feature matching and geometric verification for meaningful camera/coverage estimates; real overlap cannot be inferred safely from simple brightness differences.
 - [ ] Only after actual reliable pose estimation consider directional or angular guide / scene coverage map. Avoid inventing metric movement or exact angle.
+
+## v0.3.0 — Configurable capture FPS, frame count and diagnostics (CI-built, user-unverified)
+
+- [x] User confirmed Android v0.2.0 core capture/display behavior for ALL 3 capture modes. Preserved tested source commit on `backup/android-v0.2.0-user-verified-capture`; this does not verify 3D reconstruction or scientifically valid Smart frame quality.
+- [x] Mode-specific persistent `Live`/`Video`/`Smart` requested FPS slider 0.5–5 FPS, 0.5 increments; max frames 10–300 in steps of 10. Smart is a **maximum full-res shutter rate**, only after heuristic viewpoint checks.
+- [x] Runtime run manifests/results preserve selected FPS, requested frame count, saved source timestamps, actual accepted/sampled FPS, runtime, saved bytes, brightness/edge proxy and adjacent near-duplicate proxy.
+- [x] `Export ALL Runs + FPS Comparison` saves every completed run's reports + combined summary in one ZIP, no original photo/video content; single-run export remains.
+- [x] Requested vs measured FPS and diagnostic caveats explained onscreen; recommended start with 1 fps and compare 0.5/1/2/3 fps with equal temporal coverage.
+- [x] New JVM unit tests plus existing test suite built in GitHub Actions run `37901552835`, SUCCESS; APK `Video3DCapture-Android-v0.3.0-CANDIDATE.apk`, SHA256 `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`. Source on `backup/android-v0.3.0-ci-candidate`.
+- [ ] User tests all mode presets/sliders including higher video FPS and larger frame count. Confirm achieved frames and file quality, test export all run histories, share diagnostic ZIP. Only then promote v0.3 to verified baseline.
+- [ ] Future: analytical quality comparison using actual multi-view feature correspondence and camera registration; pixel-change heuristics alone cannot determine best reconstruction FPS.
+- [ ] Later: manage/archive/delete selected old run folders, with explicit confirmation, and optional output image/contact-sheet export; no implicit deletions.
+
