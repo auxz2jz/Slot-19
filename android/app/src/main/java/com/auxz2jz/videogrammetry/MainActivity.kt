@@ -76,6 +76,8 @@ class MainActivity : ComponentActivity() {
 class CaptureCoordinator(private val activity: MainActivity) {
     private val repository = ScanRepository(activity)
     private val worker = Executors.newSingleThreadExecutor()
+    // Separate from CameraX so a long ORB/RANSAC analysis cannot block preview.
+    private val geometryWorker = Executors.newSingleThreadExecutor()
     private val sampling = AtomicBoolean(false)
     private val smartSelecting = AtomicBoolean(false)
     private val smartInFlight = AtomicBoolean(false)
@@ -126,6 +128,12 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private var smartOptions by mutableStateOf(loadOptions("SMART", CaptureOptions.SMART_DEFAULT))
     var savedRuns by mutableStateOf(repository.completedRunCount())
         private set
+    var geometryAnalyzing by mutableStateOf(false)
+        private set
+    var geometryProgress by mutableStateOf(0f)
+        private set
+    var geometrySummary by mutableStateOf("Geometric feature analysis has not run on the latest capture")
+        private set
     val editingOptions: CaptureOptions
         get() = when (settingsMode) {
             "LIVE" -> liveOptions
@@ -133,7 +141,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
             else -> videoOptions
         }
     fun chooseSettingsMode(mode: String) {
-        if (!liveSampling && !smartSampling && !importing &&
+        if (!liveSampling && !smartSampling && !importing && !geometryAnalyzing &&
             mode in setOf("LIVE", "VIDEO", "SMART")) settingsMode = mode
     }
     fun setTargetFps(value: Double) {
@@ -234,7 +242,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun startLive() {
-        if (!cameraBound || importing || liveSampling || smartSampling) {
+        if (!cameraBound || importing || liveSampling || smartSampling || geometryAnalyzing) {
             status = "Camera is not ready or capture already active"
             return
         }
@@ -300,7 +308,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     /** Third capture mode; uses actual CameraX full-resolution JPEG ImageCapture. */
     fun startSmart() {
         if (!cameraBound || !smartAvailable || smartImageCapture == null ||
-            smartSampling || liveSampling || importing) {
+            smartSampling || liveSampling || importing || geometryAnalyzing) {
             status = "Smart capture unavailable or another mode is already running"
             return
         }
@@ -485,7 +493,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun importVideo(uri: Uri) {
-        if (importing || liveSampling || smartSampling) {
+        if (importing || liveSampling || smartSampling || geometryAnalyzing) {
             status = "Finish current capture first"
             return
         }
@@ -565,6 +573,50 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Pairwise feature analysis is opt-in and never modifies captured JPEGs or run PASS. */
+    fun analyzeLatestRunGeometry() {
+        if (geometryAnalyzing || importing || liveSampling || smartSampling) {
+            status = "Finish capture before analyzing geometry"
+            return
+        }
+        val run = currentRun
+        if (run == null || !run.isClosed || run.frameCount < 2) {
+            status = "Capture at least two valid frames before geometry analysis"
+            return
+        }
+        geometryAnalyzing = true
+        geometryProgress = 0f
+        geometrySummary = "Extracting ORB features and matching saved views..."
+        run.event("USER_ACTION", "ANALYZE_LATEST_RUN_ORB_GEOMETRY")
+        geometryWorker.execute {
+            try {
+                val report = OrbGeometryAnalyzer().analyze(run) { done, total ->
+                    ui {
+                        geometryProgress = if (total <= 0) 0f else
+                            (done.toFloat() / total).coerceIn(0f, 1f)
+                        geometrySummary = "Matched " + done + " / " + total +
+                            " sampled view pairs; this is not a 3D model"
+                    }
+                }
+                ui {
+                    val supported = report.optInt("epipolarConsistentPairs")
+                    val total = report.optInt("pairCount")
+                    geometrySummary = "ORB/RANSAC: " + supported + " / " + total +
+                        " pairs showed epipolar consistency. Background can affect results."
+                    status = "Geometry diagnostics saved. Export Test + Diagnostics or ALL Runs ZIP."
+                }
+            } catch (exc: Exception) {
+                ui {
+                    geometrySummary = "Geometry analysis FAILED: " +
+                        exc.javaClass.simpleName + ". Capture files remain intact."
+                    status = "Export diagnostics after failed geometry test."
+                }
+            } finally {
+                ui { geometryAnalyzing = false }
+            }
+        }
+    }
+
     fun recordTest(looksCorrect: Boolean) {
         val run = currentRun
         if (run == null || !run.isClosed) {
@@ -604,6 +656,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     }
 
     fun shutdown() {
+        geometryWorker.shutdownNow()
         sampling.set(false)
         smartSelecting.set(false)
         provider?.unbindAll()
@@ -661,11 +714,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.3.0 CANDIDATE — Adjustable FPS and per-run diagnostics")
+            Text("Android v0.4.0 CANDIDATE — ORB/RANSAC geometric pair analysis")
             Text("Keep the object stationary; move the phone slowly around it.")
             val settings = coordinator.editingOptions
             val editingAllowed = !coordinator.liveSampling && !coordinator.smartSampling &&
-                !coordinator.importing
+                !coordinator.importing && !coordinator.geometryAnalyzing
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("Capture settings — choose which mode to configure",
@@ -719,7 +772,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Button(onClick = { coordinator.stopLive() }) { Text("Stop Live Sampling") }
                 } else {
                     Button(onClick = { coordinator.startLive() },
-                        enabled = coordinator.cameraBound && !coordinator.importing && !coordinator.smartSampling) {
+                        enabled = coordinator.cameraBound && !coordinator.importing && !coordinator.smartSampling && !coordinator.geometryAnalyzing) {
                         Text("Start Live Sampling")
                     }
                 }
@@ -728,7 +781,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 Button(onClick = { coordinator.stopSmart() }) { Text("Stop Smart Auto Capture") }
             } else {
                 Button(onClick = { coordinator.startSmart() },
-                    enabled = coordinator.smartAvailable && !coordinator.liveSampling && !coordinator.importing) {
+                    enabled = coordinator.smartAvailable && !coordinator.liveSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                     Text("Start Smart Auto Capture")
                 }
             }
@@ -744,7 +797,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 }
             }
             Button(onClick = { videoPicker.launch(arrayOf("video/*")) },
-                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing) {
+                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Choose Video")
             }
             OutlinedCard(Modifier.fillMaxWidth()) {
@@ -760,19 +813,38 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 Image(latestBitmap.asImageBitmap(), "Last saved frame",
                     Modifier.fillMaxWidth().height(185.dp), contentScale = ContentScale.Fit)
             }
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Feature matching and geometric consistency",
+                        style = MaterialTheme.typography.titleMedium)
+                    Text("ORB detects real visual features. Hamming matching + fundamental-matrix RANSAC checks consistency between neighboring saved views. Background, flat objects or too little motion can mislead it.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { coordinator.analyzeLatestRunGeometry() },
+                        enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
+                            !coordinator.liveSampling && !coordinator.smartSampling &&
+                            !coordinator.importing && !coordinator.geometryAnalyzing) {
+                        Text(if (coordinator.geometryAnalyzing) "Analyzing saved photos..."
+                            else "Analyze Latest Run — ORB Geometry")
+                    }
+                    if (coordinator.geometryAnalyzing) LinearProgressIndicator(
+                        progress = { coordinator.geometryProgress },
+                        modifier = Modifier.fillMaxWidth())
+                    Text(coordinator.geometrySummary)
+                }
+            }
             Button(onClick = { showGuide = true },
-                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing) {
+                enabled = !coordinator.liveSampling && !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.3.0-last-run-diagnostics.zip")
-            }, enabled = latest != null && latest.isClosed) {
+                exportPicker.launch("Android-v0.4.0-last-run-diagnostics.zip")
+            }, enabled = latest != null && latest.isClosed && !coordinator.geometryAnalyzing) {
                 Text("Export Test + Diagnostics")
             }
             Button(onClick = {
-                historyPicker.launch("Android-v0.3.0-ALL-run-comparison.zip")
+                historyPicker.launch("Android-v0.4.0-ALL-run-comparison.zip")
             }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
-                !coordinator.smartSampling && !coordinator.importing) {
+                !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Export ALL Runs + FPS Comparison")
             }
             Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
@@ -784,7 +856,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
 
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.3.0") },
+        title = { Text("Test This Version — v0.4.0") },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
             "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
             "when the image is steady, sharp and sufficiently different.\n\n" +
@@ -794,7 +866,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "Otherwise tap Expected Behavior Failed.\n\n" +
             "4. Try the same stationary object at 0.5, 1, 2 and 3 FPS using the rate slider, then Export ALL Runs + FPS Comparison. " +
             "Look for useful sharp views and sufficient overlap; higher FPS alone is not a PASS. " +
-            "This does not test any 3D reconstruction.") },
+            "5. After a capture, tap Analyze Latest Run — ORB Geometry and inspect matched-pair counts. " +
+            "A low match count is not a capture-file failure; a high count is not a reconstructed model.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
