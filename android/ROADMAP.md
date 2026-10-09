@@ -198,3 +198,10 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Run GitHub Actions `37996729999`; correct compiler errors if any; preserve CI-success source and APK SHA.
 - [ ] Phone: one finger drag around object Photo1, Next Photo, same object Photo2, Create; see kept point counts, separate object PLY, original scene still viewable; send diagnostic ZIP.
 - [ ] v0.8.1 USER verified only after user confirms these controls work. No automatic semantic segmentation or physical dimensions claimed.
+
+
+## Next regression fix after v0.8.1 user ROI test — calibration-first crash and rotation cancellation
+- [ ] **Calibration must work before or after video import.** User reports app crashes when calibration is done before video import, but works after. Not by design: profile is saved independently and currently not applied. Reproduce with no capture, instrument calibration startup/native/OpenCV/memory and persistent crash evidence; inspect actual logs before choosing fix.
+- [ ] **Phone rotation must not cancel active work.** Manifest unspecified orientation + `MainActivity.onDestroy()->capture.shutdown()` and coordinator per `onCreate` explains lost current operation/UI status during Activity recreation. Add lifecycle-resilient work ownership or safe configuration-change handling with camera rebind, event/status persistence, and no falsely recorded result. Test rotation during live/Smart/video extraction, sparse PLY, third-view, object selection and checkerboard processing.
+- [ ] Keep user testing existing v0.8.1 touch-region selector uninterrupted. Avoid silently changing a tested APK. Temporary workaround: calibrate after video import, keep Auto-rotate off while running actions.
+- [ ] Later calibration-model integration still requires matching lens/zoom/crop/aspect; ordering alone cannot make checkerboard intrinsics compatible.
