@@ -133,3 +133,16 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Calibrate on 12–20 varying checkerboard photos; confirm accepted count/RMS; try blurred/no-board failure and verify logging. Do not use results for sparse poses until lens/zoom and crop compatibility verified.
 - [ ] Device regression test 3 capture modes, prior ORB + sparse PLY export, and all-run diagnostic ZIP; user confirmation required for v0.6 verified baseline.
 - [ ] Later geometry: use validated camera K/distortion with camera-mode-specific image crop and relative scale; improve sparse multi-view structure, object/background segmentation and outlier rejection. Do not confuse checkerboard square mm with known reconstructed object scale from a monocular sequence.
+
+
+## v0.6.1 — Fix misleading PLY/ZIP version names permanently
+
+- [x] Analyze two uploaded v0.6.0 diagnostic ZIPs and repeated PLY export filenames (named v0.5.0 despite current app v0.6.0).
+- [x] Preserve latest user-confirmed Android v0.6.0 device-functional source at `backup/android-v0.6.0-user-verified-viewer-calibration`; older backups preserved too.
+- [x] Central pure `ExportNames.kt`, unit tests for correct current/future release, per-run ID and UTC-millisecond uniqueness; PLY/last-run/all-run SAF suggested filenames derive from `BuildConfig.VERSION_NAME`.
+- [x] Android APK/CI artifact filename version dynamically read from Gradle versionName by workflow.
+- [x] New export-provenance metadata distinguishes current exporter build from historical capture/analysis version; DO NOT silently change old manifests.
+- [x] Source/algorithm unaffected: still same capture/ORB/two-view/PLY viewer and calibration.
+- [ ] GitHub CI `37917793167` build/test; record exact source commit and verified APK hash.
+- [ ] User real-device confirms that each new export says current version `v0.6.1` and second export gets a different name; new ZIP metadata reports current exporter and earlier scan creator distinctly.
+- [ ] Continue calibration/image geometry improvements only after v0.6.1 user verification, respecting real camera/lens/crop.
