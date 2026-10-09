@@ -539,6 +539,126 @@ class SparseTwoViewAnalyzer {
     }
 
     /**
+     * Register one additional photograph to the ROI-first baseline via robust
+     * 3D-to-2D PnP, then triangulate previously unseen FIRST-photo features.
+     * PnP's pose is in the SAME local 3D coordinate system as the baseline.
+     * These are real new XYZ tracks, not copies or a merged unaligned pair.
+     */
+    private fun expandRegisteredView(anchor:Features,third:Features,base:Candidate,
+        viewIndex:Int,used:MutableSet<Int>):Pair<JSONObject,List<SparseVertex>> {
+        val result=JSONObject().put("frame",viewIndex).put("state","CHECKING")
+        if(anchor.colors.width!=third.colors.width ||
+            anchor.colors.height!=third.colors.height ||
+            anchor.desc.empty() || third.desc.empty())
+            return result.put("state","INCOMPATIBLE_VIEW") to emptyList()
+        val raw=ArrayList<MatOfDMatch>()
+        val matches=ArrayList<org.opencv.core.DMatch>()
+        try {
+            BFMatcher.create(Core.NORM_HAMMING,false).knnMatch(
+                anchor.desc,third.desc,raw,2)
+            val uniqueThird=HashSet<Int>()
+            for(group in raw) {
+                val pair=group.toArray()
+                if(pair.size<2 || pair[0].distance>=0.75f*pair[1].distance)continue
+                if(uniqueThird.add(pair[0].trainIdx)) matches.add(pair[0])
+            }
+        } finally { raw.forEach { it.release() } }
+        val known=matches.filter { it.queryIdx in base.anchorTracks }
+        result.put("goodDescriptorMatches",matches.size)
+            .put("shared3d2dTracks",known.size)
+        if(known.size<MultiViewPolicy.MIN_TRACKS)
+            return result.put("state","INSUFFICIENT_PNP_TRACKS") to emptyList()
+        val objectPts=MatOfPoint3f()
+        val imagePts=MatOfPoint2f()
+        val K=Mat.eye(3,3,CvType.CV_64F)
+        val dist=MatOfDouble()
+        val rvec=Mat(); val tvec=Mat(); val inliers=Mat()
+        val projections=MatOfPoint2f()
+        val R=Mat()
+        try {
+            val f=0.95*maxOf(anchor.colors.width,anchor.colors.height)
+            val cx=(anchor.colors.width-1)/2.0
+            val cy=(anchor.colors.height-1)/2.0
+            K.put(0,0,f);K.put(1,1,f);K.put(0,2,cx);K.put(1,2,cy)
+            objectPts.fromList(known.map {
+                val v=base.anchorTracks.getValue(it.queryIdx)
+                Point3(v.x,v.y,v.z)
+            })
+            imagePts.fromList(known.map { third.keys[it.trainIdx].pt })
+            val ok=Calib3d.solvePnPRansac(objectPts,imagePts,K,dist,
+                rvec,tvec,false,150,3f,0.99,inliers,Calib3d.SOLVEPNP_EPNP)
+            if(!ok)
+                return result.put("state","PNP_RANSAC_REJECTED") to emptyList()
+            val inlierRows=(0 until inliers.rows()).mapNotNull {
+                inliers.get(it,0)?.firstOrNull()?.toInt()
+            }.filter { it in known.indices }
+            Calib3d.projectPoints(objectPts,rvec,tvec,K,dist,projections)
+            val projected=projections.toArray()
+            val error=median(inlierRows.map {
+                val observed=third.keys[known[it].trainIdx].pt
+                hypot(projected[it].x-observed.x,projected[it].y-observed.y)
+            })
+            result.put("pnpInliers",inlierRows.size)
+                .put("pnpMedianErrorPx",if(error.isFinite())error else JSONObject.NULL)
+            if(!MultiViewPolicy.pnpAccepted(known.size,inlierRows.size,error))
+                return result.put("state","PNP_QUALITY_REJECTED") to emptyList()
+            val remaining=matches.filter {
+                it.queryIdx !in used && it.queryIdx !in base.anchorTracks
+            }
+            result.put("novelImageTracks",remaining.size)
+            if(remaining.isEmpty())
+                return result.put("state","POSE_VALID_NO_NOVEL_TRACKS") to emptyList()
+            Calib3d.Rodrigues(rvec,R)
+            val P0=projection1(f,cx,cy)
+            val Pn=projection2(f,cx,cy,R,tvec)
+            val a=MatOfPoint2f();val b=MatOfPoint2f();val X=Mat()
+            try {
+                a.fromList(remaining.map { anchor.keys[it.queryIdx].pt })
+                b.fromList(remaining.map { third.keys[it.trainIdx].pt })
+                Calib3d.triangulatePoints(P0,Pn,a,b,X)
+                val newPoints=ArrayList<SparseVertex>()
+                for(i in remaining.indices) {
+                    val m=remaining[i]
+                    val xh=X.get(0,i)?.firstOrNull() ?: continue
+                    val yh=X.get(1,i)?.firstOrNull() ?: continue
+                    val zh=X.get(2,i)?.firstOrNull() ?: continue
+                    val wh=X.get(3,i)?.firstOrNull() ?: continue
+                    if(!wh.isFinite() || kotlin.math.abs(wh)<1e-9)continue
+                    val x=xh/wh;val y=yh/wh;val z=zh/wh
+                    if(!x.isFinite() || !y.isFinite() || !z.isFinite() ||
+                        z<=0.01 || z>1e5)continue
+                    val xx=R.get(0,0)[0]*x+R.get(0,1)[0]*y+R.get(0,2)[0]*z+tvec.get(0,0)[0]
+                    val yy=R.get(1,0)[0]*x+R.get(1,1)[0]*y+R.get(1,2)[0]*z+tvec.get(1,0)[0]
+                    val zz=R.get(2,0)[0]*x+R.get(2,1)[0]*y+R.get(2,2)[0]*z+tvec.get(2,0)[0]
+                    if(zz<=0.01)continue
+                    val p1=anchor.keys[m.queryIdx].pt
+                    val p2=third.keys[m.trainIdx].pt
+                    val reproj=(hypot(f*x/z+cx-p1.x,f*y/z+cy-p1.y)+
+                        hypot(f*xx/zz+cx-p2.x,f*yy/zz+cy-p2.y))/2
+                    val angle=angleDegrees(p1,p2,R,f,cx,cy)
+                    if(!MultiViewPolicy.newPointAccepted(reproj,angle))continue
+                    val pixel=anchor.colors.getPixel(p1.x.toInt()
+                        .coerceIn(0,anchor.colors.width-1),
+                        p1.y.toInt().coerceIn(0,anchor.colors.height-1))
+                    if(used.add(m.queryIdx))
+                        newPoints.add(SparseVertex(x,y,z,Color.red(pixel),
+                            Color.green(pixel),Color.blue(pixel)))
+                    if(used.size>=MultiViewPolicy.MAX_TOTAL_POINTS)break
+                }
+                result.put("newAccepted3dPoints",newPoints.size)
+                    .put("state","PNP_REGISTERED_TRIANGULATED")
+                return result to newPoints
+            } finally {
+                P0.release();Pn.release();a.release();b.release();X.release()
+            }
+        } finally {
+            objectPts.release();imagePts.release();K.release();dist.release()
+            rvec.release();tvec.release();inliers.release();projections.release()
+            R.release()
+        }
+    }
+
+    /**
      * Optional early-selected target: independently detect ORB points INSIDE
      * two user rectangles, then match/solve/triangulate a fresh object-priority
      * candidate. Scene PLY remains untouched and retains background pose cues.
@@ -585,7 +705,7 @@ class SparseTwoViewAnalyzer {
             .put("warning","Points re-detected within object boxes BEFORE triangulation. Separate estimated two-view pose; backgrounds inside boxes can pass. No mesh, true scale, bundle adjustment or globally shared coordinates.")
         run.event("OPERATION_START","EARLY_OBJECT_FOCUS",
             JSONObject().put("operationId",id).put("sourceFrameB",actual.second))
-        val focusFile=File(run.directory,"sparse_object_focus.ply")
+        val focusFile=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY)
         try {
             check(OpenCVLoader.initLocal()) { "OpenCV initialization failed" }
             val orb=ORB.create(2400)
@@ -616,14 +736,14 @@ class SparseTwoViewAnalyzer {
             if(points.isEmpty()) {
                 focusFile.delete()
             } else {
-                val tmp=File(run.directory,"sparse_object_focus.ply.tmp")
+                val tmp=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY+".tmp")
                 tmp.writeText(SparsePolicy.asciiPly(points))
                 check(tmp.length()>150) { "Object-priority PLY empty" }
                 check(tmp.renameTo(focusFile)) { "Failed finalizing object-priority PLY" }
             }
-            val tmp=File(run.directory,"object_focus_report.json.tmp")
+            val tmp=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_REPORT+".tmp")
             tmp.writeText(report.toString(2))
-            check(tmp.renameTo(File(run.directory,"object_focus_report.json")))
+            check(tmp.renameTo(File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_REPORT)))
             run.event("ANALYSIS_RESULT","EARLY_OBJECT_FOCUS",
                 JSONObject().put("operationId",id)
                     .put("status",report.optString("status"))
@@ -632,10 +752,146 @@ class SparseTwoViewAnalyzer {
             return report
         } catch(ex:Exception) {
             report.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
-            File(run.directory,"object_focus_last_failure.json")
+            File(run.directory,"early_object_reconstruction_last_failure.json")
                 .writeText(report.toString(2))
             run.event("ERROR","EARLY_OBJECT_FOCUS",
                 JSONObject().put("operationId",id)
+                    .put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
+
+    /**
+     * EXPERIMENTAL incremental multi-view: source pair plus up to 8 further
+     * registered saved camera views. Each new XYZ point is reconstructed from
+     * a fresh first-photo descriptor track, triangulated into the SAME local
+     * baseline frame using a PnP-estimated additional camera pose.
+     * Not bundle adjustment, semantic segmentation, or a dense mesh.
+     */
+    fun analyzeObjectMultiView(run:ScanRun,
+        progress:(Int,Int)->Unit):JSONObject {
+        require(run.isClosed && run.resultIsValid()) { "Completed frames required" }
+        val saved=File(run.directory,"early_object_focus_selection.json")
+        require(saved.isFile) { "First select the object BEFORE sparse 3D" }
+        val selection=JSONObject(saved.readText())
+        require(selection.getString("runId")==run.id &&
+            selection.getInt("schemaVersion")==1) { "Invalid saved early object selection" }
+        val frames=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val pair=selection.getJSONArray("sourcePair")
+        val expected=EarlyObjectFocusPolicy.sourcePair(frames.length())
+        require(pair.getInt(0)==expected.first && pair.getInt(1)==expected.second &&
+            selection.optInt("sourceFrameCount")==frames.length()) {
+            "Selected object photographs no longer match this scan"
+        }
+        fun rect(key:String):FocusRect {
+            val o=selection.getJSONObject(key)
+            return FocusRect(o.getDouble("left"),o.getDouble("top"),
+                o.getDouble("right"),o.getDouble("bottom"))
+        }
+        val a=rect("firstRectangle");val b=rect("secondRectangle")
+        require(EarlyObjectFocusPolicy.selectionValid(a,b)) { "Invalid saved ROI" }
+        val options=MultiViewPolicy.extraFrames(frames.length(),expected.second)
+        val id=UUID.randomUUID().toString()
+        val rows=JSONArray()
+        val out=JSONObject().put("analysisId",id).put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("method","EARLY_ROI_ORB_PNP_REGISTERED_EXTRA_VIEWS_NEW_TRACK_TRIANGULATION")
+            .put("originalSourcePair",pair)
+            .put("extraFrameIndices",JSONArray(options))
+            .put("sourceSelectionTimestamp",selection.optLong("selectedAtUtcMs"))
+            .put("cameraIntrinsics","ESTIMATED_NOT_CALIBRATED")
+            .put("scale","UNKNOWN_ARBITRARY_BASELINE")
+            .put("sameCoordinateSystemAsRoiTwoView",true)
+            .put("sameCoordinateSystemAsFullScene",false)
+            .put("warning","Each new point is triangulated with its FIRST source photo and one registered extra view. No bundle adjustment or metric scale. Background inside user ROI may still be reconstructed. A higher count is not proof of shape.")
+            .put("status","IN_PROGRESS")
+        run.event("OPERATION_START","OBJECT_MULTIVIEW",
+            JSONObject().put("analysisId",id).put("extraViews",options.size))
+        val target=File(run.directory,CloudArtifacts.MULTIVIEW_PLY)
+        try {
+            check(OpenCVLoader.initLocal()) { "OpenCV module unavailable" }
+            val orb=ORB.create(2400)
+            try {
+                val first=features(checkedFile(run,frames,expected.first),orb,a)
+                try {
+                    val second=features(checkedFile(run,frames,expected.second),orb,b)
+                    val baseline=try {
+                        candidate(first,second,expected.first,expected.second)
+                    } finally { second.release() }
+                    val base=baseline.vertices
+                    out.put("baselinePairVerdict",baseline.report.optString("verdict"))
+                        .put("baselinePoints",base.size)
+                        .put("baselineAnchorTracks",baseline.anchorTracks.size)
+                    val combined=ArrayList<SparseVertex>(base)
+                    val used=baseline.anchorTracks.keys.toMutableSet()
+                    var supported=0
+                    var contributing=0
+                    for((ordinal,index) in options.withIndex()) {
+                        val extra=features(checkedFile(run,frames,index),orb)
+                        try {
+                            val (row,points)=try {
+                                if(base.isEmpty() ||
+                                    baseline.anchorTracks.size<MultiViewPolicy.MIN_TRACKS)
+                                    JSONObject().put("frame",index)
+                                        .put("state","BASELINE_INCONCLUSIVE") to
+                                        emptyList<SparseVertex>()
+                                else expandRegisteredView(first,extra,baseline,index,used)
+                            } catch(ex:Exception) {
+                                JSONObject().put("frame",index)
+                                    .put("state","VIEW_ANALYSIS_ERROR")
+                                    .put("errorType",ex.javaClass.simpleName) to
+                                    emptyList<SparseVertex>()
+                            }
+                            if(row.optString("state")=="PNP_REGISTERED_TRIANGULATED") {
+                                supported++
+                                if(points.isNotEmpty())contributing++
+                            }
+                            combined.addAll(points)
+                            rows.put(row)
+                            run.event("ANALYSIS_PROGRESS","OBJECT_MULTIVIEW",
+                                JSONObject().put("done",ordinal+1)
+                                    .put("total",options.size)
+                                    .put("newPoints",combined.size-base.size))
+                            progress(ordinal+1,options.size)
+                        } finally { extra.release() }
+                        if(combined.size>=MultiViewPolicy.MAX_TOTAL_POINTS)break
+                    }
+                    val added=combined.size-base.size
+                    val verdict=MultiViewPolicy.verdict(base.size,added,contributing)
+                    out.put("extraViewResults",rows)
+                        .put("attemptedExtraViews",rows.length())
+                        .put("pnpRegisteredExtraViews",supported)
+                        .put("viewsContributingNewPoints",contributing)
+                        .put("newPointsFromAdditionalFrames",added)
+                        .put("totalPoints",combined.size)
+                        .put("status",verdict)
+                    if(verdict=="MULTIVIEW_SPARSE_CANDIDATE") {
+                        val tmp=File(run.directory,CloudArtifacts.MULTIVIEW_PLY+".tmp")
+                        tmp.writeText(SparsePolicy.asciiPly(combined))
+                        check(tmp.length()>150) { "Multi-view PLY empty" }
+                        check(tmp.renameTo(target)) { "Cannot finalize multi-view PLY" }
+                    } else target.delete()
+                } finally { first.release() }
+            } finally { orb.clear() }
+            val report=File(run.directory,CloudArtifacts.MULTIVIEW_REPORT)
+            val tmp=File(run.directory,CloudArtifacts.MULTIVIEW_REPORT+".tmp")
+            tmp.writeText(out.toString(2))
+            check(tmp.renameTo(report)) { "Cannot finalize multi-view report" }
+            run.event("ANALYSIS_RESULT","OBJECT_MULTIVIEW",
+                JSONObject().put("analysisId",id)
+                    .put("status",out.optString("status"))
+                    .put("basePoints",out.optInt("baselinePoints"))
+                    .put("newPoints",out.optInt("newPointsFromAdditionalFrames"))
+                    .put("extraViewsContributed",out.optInt("viewsContributingNewPoints")))
+            return out
+        } catch(ex:Exception) {
+            out.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
+            File(run.directory,"object_multiview_last_failure.json")
+                .writeText(out.toString(2))
+            run.event("ERROR","OBJECT_MULTIVIEW",
+                JSONObject().put("analysisId",id)
                     .put("errorType",ex.javaClass.simpleName))
             throw ex
         }

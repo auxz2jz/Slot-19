@@ -166,6 +166,18 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var objectFocusAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
         private set
+    var reconstructedAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile() } ?: false)
+        private set
+    var multiviewAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,CloudArtifacts.MULTIVIEW_PLY).isFile() } ?: false)
+        private set
+    var multiviewWorking by mutableStateOf(false)
+        private set
+    var multiviewProgress by mutableStateOf(0f)
+        private set
+    var multiviewMessage by mutableStateOf("Multi-view not checked yet")
+        private set
     var objectFocusWorking by mutableStateOf(false)
         private set
     var objectFocusMessage by mutableStateOf("Object focus not selected yet")
@@ -641,7 +653,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
             earlyObjectSelected = File(run.directory,"early_object_focus_selection.json").isFile()
-            objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+            objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
+            reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
+            multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
@@ -705,8 +719,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     /** Experimental relative two-view pose, unknown scale; no validated full scan. */
     fun analyzeSparseTwoView() {
-        if (sparseAnalyzing || geometryAnalyzing || importing ||
-            liveSampling || smartSampling) {
+        if (sparseAnalyzing || geometryAnalyzing || multiviewWorking ||
+            importing || liveSampling || smartSampling) {
             status = "Finish other captures/analyses before sparse 3D"
             return
         }
@@ -718,6 +732,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         sparseAnalyzing = true
         sparseAvailable = false
         objectFocusAvailable = false
+        reconstructedAvailable = false
+        multiviewAvailable = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -744,7 +760,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
-                    objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+                    objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
+                    reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
+                    multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
                     objectFocusMessage = if(early!=null)
                         early.optString("status") + ": " +
                         early.optInt("objectCandidatePoints") +
@@ -853,7 +871,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
         try {
             val result=ObjectFocusProcessor().saveBeforeSparse(run,first,second)
             earlyObjectSelected=true
-            objectFocusMessage="Object selected in both photos BEFORE 3D. Tap Analyze Sparse 3D to build full-scene and independent object-priority clouds."
+            reconstructedAvailable=false
+            multiviewAvailable=false
+            savedClouds=repository.savedPlyEntries()
+            objectFocusMessage="Object marked in both photos BEFORE 3D. Tap Analyze Sparse 3D for a new ROI-first model, then run registered multi-view."
             status="Early object boxes saved for frames "+
                 result.getJSONArray("sourcePair").getInt(0)+" and "+
                 result.getJSONArray("sourcePair").getInt(1)
@@ -887,7 +908,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     fun applyObjectFocus(first: FocusRect, second: FocusRect) {
         val run=currentRun ?: return
         if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
-            geometryAnalyzing || liveSampling || smartSampling || importing)return
+            geometryAnalyzing || multiviewWorking || liveSampling || smartSampling || importing)return
         objectFocusWorking=true
         objectFocusMessage="Matching 3D points against both object rectangles..."
         geometryWorker.execute {
@@ -906,6 +927,64 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 ui { objectFocusMessage="Object focus failed: "+ex.javaClass.simpleName +
                     ". Full-scene PLY remains unchanged; export diagnostics." }
             } finally { ui { objectFocusWorking=false } }
+        }
+    }
+
+    fun analyzeObjectMultiView() {
+        val run=currentRun ?: return
+        if(multiviewWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            objectFocusWorking || geometryAnalyzing || importing ||
+            liveSampling || smartSampling || calibrating) {
+            multiviewMessage="Finish the active operation first"
+            return
+        }
+        if(!run.isClosed || !earlyObjectSelected || !reconstructedAvailable) {
+            multiviewMessage="Select object BEFORE Sparse 3D and analyze the ROI-first pair first"
+            return
+        }
+        multiviewWorking=true
+        multiviewProgress=0f
+        multiviewMessage="Registering additional camera positions using matched 3D anchors..."
+        geometryWorker.execute {
+            try {
+                val result=SparseTwoViewAnalyzer().analyzeObjectMultiView(run) { done,total ->
+                    ui {
+                        multiviewProgress=if(total==0)0f else done.toFloat()/total
+                        multiviewMessage="Registered/checked "+done+" / "+total+" extra photographs"
+                    }
+                }
+                ui {
+                    multiviewAvailable=File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+                    savedClouds=repository.savedPlyEntries()
+                    multiviewMessage=result.optString("status")+": "+
+                        result.optInt("baselinePoints")+" original target points + "+
+                        result.optInt("newPointsFromAdditionalFrames")+" new XYZ tracks from "+
+                        result.optInt("viewsContributingNewPoints")+" additional camera views. "+
+                        "Unknown physical scale; verify shape manually."
+                    status="Multi-view experiment "+result.optString("status")+
+                        ". Export reports and each PLY separately."
+                }
+            } catch(ex:Exception) {
+                ui {
+                    multiviewAvailable=File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+                    multiviewMessage="Multi-view FAILED: "+ex.javaClass.simpleName+
+                        ". Original full-scene and object 2-view clouds untouched; export diagnostics."
+                }
+            } finally { ui { multiviewWorking=false } }
+        }
+    }
+
+    fun exportSeparateCloud(uri: Uri, name:String) {
+        val run=currentRun ?: return
+        if(multiviewWorking || sparseAnalyzing || objectFocusWorking ||
+            thirdViewAnalyzing || importing || liveSampling || smartSampling)return
+        worker.execute {
+            try {
+                val n=repository.exportSeparatePly(run,uri,name)
+                ui { status="Exported "+name+" ("+n+" bytes)" }
+            } catch(ex:Exception) {
+                ui { status="PLY export failed: "+ex.javaClass.simpleName }
+            }
         }
     }
 
@@ -947,13 +1026,14 @@ class CaptureCoordinator(private val activity: MainActivity) {
         geometryWorker.execute {
             try {
                 val points = entry.file.inputStream().use {
-                    PlyParser.parse(it, "Run " + entry.runId.takeLast(12))
+                    PlyParser.parse(it,entry.sourceKind + " · " +
+                        entry.runId.takeLast(8))
                 }
                 currentRun?.event("USER_ACTION", "VIEW_SAVED_PLY", JSONObject()
                     .put("selectedRunId",entry.runId).put("pointCount",points.count))
                 ui {
                     viewerCloud = points
-                    viewerStatus = points.count.toString() +
+                    viewerStatus = entry.sourceKind + ": " + points.count +
                         " colored points. Rotate or zoom; physical scale unknown."
                 }
             } catch (ex: Exception) {
@@ -1119,6 +1199,14 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val objectPlyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if(uri != null) coordinator.exportObjectFocusPly(uri) }
+    val reconstructedPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri!=null)
+        coordinator.exportSeparateCloud(uri,CloudArtifacts.ROI_RECONSTRUCTED_PLY) }
+    val multiViewPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri!=null)
+        coordinator.exportSeparateCloud(uri,CloudArtifacts.MULTIVIEW_PLY) }
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -1311,6 +1399,80 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Text("Object reconstruction — independent early-ROI model",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("Features were detected INSIDE both object rectangles BEFORE 3D. "+
+                        "Its coordinates are independent from the full-scene cloud.")
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.ROI_RECONSTRUCTED_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.reconstructedAvailable &&
+                        !coordinator.multiviewWorking && !coordinator.sparseAnalyzing) {
+                        Text("View ROI-First Reconstruction — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {
+                            val name=ExportNames.reconstructedPly(
+                                BuildConfig.VERSION_NAME,it.id)
+                            coordinator.logExportName("ROI_RECONSTRUCTED_PLY",name)
+                            reconstructedPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.reconstructedAvailable &&
+                        !coordinator.multiviewWorking && !coordinator.sparseAnalyzing) {
+                        Text("Export ROI-First Reconstruction PLY")
+                    }
+                    Text("Multi-view experiment — adds new XYZ tracks from registered "+
+                        "third/fourth/etc. photos into one LOCAL ROI coordinate frame. "+
+                        "No bundle adjustment or physical dimensions.")
+                    Button(onClick={coordinator.analyzeObjectMultiView()},
+                        enabled=coordinator.reconstructedAvailable &&
+                            !coordinator.multiviewWorking && !coordinator.sparseAnalyzing &&
+                            !coordinator.geometryAnalyzing && !coordinator.thirdViewAnalyzing &&
+                            !coordinator.objectFocusWorking && !coordinator.importing &&
+                            !coordinator.calibrating) {
+                        Text(if(coordinator.multiviewWorking)
+                            "Registering extra photographs..."
+                            else "Build Multi-View Object Cloud — Experimental")
+                    }
+                    if(coordinator.multiviewWorking) LinearProgressIndicator(
+                        progress={coordinator.multiviewProgress},
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.multiviewMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.MULTIVIEW_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.multiviewAvailable &&
+                        !coordinator.multiviewWorking) {
+                        Text("View Multi-View Reconstruction — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {
+                            val name=ExportNames.multiviewPly(
+                                BuildConfig.VERSION_NAME,it.id)
+                            coordinator.logExportName("MULTIVIEW_PLY",name)
+                            multiViewPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.multiviewAvailable &&
+                        !coordinator.multiviewWorking) {
+                        Text("Export Multi-View PLY — Experimental")
+                    }
+
+                    Text("Filtered scene — legacy AFTER-reconstruction subset",
+                        style=MaterialTheme.typography.titleMedium)
                     Text("Object Focus — experimental", style=MaterialTheme.typography.titleMedium)
                     Text("Draw the object rectangle in BOTH saved source photographs. " +
                         "Points must match inside both rectangles; background features " +
@@ -1341,17 +1503,17 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         }
                     }, enabled=coordinator.objectFocusAvailable &&
                         !coordinator.objectFocusWorking) {
-                        Text("View Object-Focused Points — 3D")
+                        Text("View Filtered Scene — 3D")
                     }
                     Button(onClick={
                         coordinator.latestRun?.let { run ->
-                            val name=ExportNames.objectFocusPly(BuildConfig.VERSION_NAME,run.id)
+                            val name=ExportNames.filteredScenePly(BuildConfig.VERSION_NAME,run.id)
                             coordinator.logExportName("OBJECT_FOCUS_PLY",name)
                             objectPlyPicker.launch(name)
                         }
                     }, enabled=coordinator.objectFocusAvailable &&
                         !coordinator.objectFocusWorking && !coordinator.sparseAnalyzing) {
-                        Text("Export Object-Focused PLY — Experimental")
+                        Text("Export Filtered Scene PLY — Experimental")
                     }
                     Button(onClick={ coordinator.validateThirdView() },
                         enabled=latest!=null && latest.isClosed &&
@@ -1517,7 +1679,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
             "or switch to Move to pan a zoomed image. Tap Next Photo. " +
             "Draw the same object in Photo 2 and tap Create Object PLY. " +
-            "Compare Full scene vs Object focus saved clouds, verify kept and excluded " +
+            "NEW: Compare Full scene, ROI-First Reconstruction and Filtered Scene as distinct clouds, " +
+            "and export each to different filenames. Then tap Build Multi-View Object Cloud, " +
+            "inspect registered third-camera count and NEW triangulated XYZ points, " +
+            "compare ROI-first and multi-view from the same relative coordinate frame. " +
             "point counts, then export each separate PLY. Use a bad/empty region to test " +
             "the inconclusive path. New diagnostics should contain object_focus_report.json.") },
         confirmButton = {
@@ -1551,7 +1716,7 @@ private fun SparseViewerDialog(
             Column(Modifier.padding(12.dp),
                 verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("Sparse Point Cloud Viewer", style=MaterialTheme.typography.titleLarge)
-                Text("Experimental two-view points, arbitrary size and orientation. " +
+                Text("Separate scene, ROI-first, filtered, and multi-view XYZ sets. " +
                     "Drag to rotate; pinch to zoom. Not a finished 3D model.")
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Box {

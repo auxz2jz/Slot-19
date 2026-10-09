@@ -42,13 +42,21 @@ class ScanRepository(private val context: Context) {
                     JSONObject(File(folder,"result.json").readText()).optString("sourceKind")
                 }.getOrDefault("unknown")
                 val variants=listOf(
-                    Triple("sparse_two_view.ply","Full scene","sparse_report.json"),
-                    Triple("sparse_object_focus.ply","Object focus","object_focus_report.json"))
+                    Triple(CloudArtifacts.SCENE_PLY,"Full scene · 2-view","sparse_report.json"),
+                    Triple(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
+                        "Object reconstruction · ROI-first",CloudArtifacts.ROI_RECONSTRUCTED_REPORT),
+                    Triple(CloudArtifacts.FILTERED_SCENE_PLY,
+                        "Filtered scene · subset",CloudArtifacts.FILTERED_SCENE_REPORT),
+                    Triple(CloudArtifacts.MULTIVIEW_PLY,
+                        "Object reconstruction · multi-view",CloudArtifacts.MULTIVIEW_REPORT))
                 variants.mapNotNull { (name,label,reportName) ->
                     val file=File(folder,name)
                     if(!file.isFile) return@mapNotNull null
                     val meta=runCatching { JSONObject(File(folder,reportName).readText()) }.getOrNull()
-                    val count=if(label=="Full scene") meta?.optInt("pointCount") ?: 0
+                    val count=if(name==CloudArtifacts.SCENE_PLY)
+                        meta?.optInt("pointCount") ?: 0
+                        else if(name==CloudArtifacts.MULTIVIEW_PLY)
+                            meta?.optInt("totalPoints") ?: 0
                         else meta?.optInt("objectCandidatePoints") ?: 0
                     SavedPlyEntry(folder.name,source+" / "+label,file,count)
                 }
@@ -73,7 +81,11 @@ class ScanRepository(private val context: Context) {
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
             "object_focus_selection.json", "object_focus_last_failure.json",
-            "early_object_focus_selection.json")
+            "early_object_focus_selection.json",
+            "early_object_reconstruction_report.json",
+            "early_object_reconstruction_last_failure.json",
+            "object_multiview_report.json",
+            "object_multiview_last_failure.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -190,6 +202,32 @@ class ScanRepository(private val context: Context) {
         }
     }
 
+    /** Independent reconstructed object / multi-view PLY exports. */
+    fun exportSeparatePly(run: ScanRun, uri: Uri, name: String): Long {
+        require(name in setOf(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
+            CloudArtifacts.MULTIVIEW_PLY)) { "Only new reconstructed PLY variants permitted" }
+        val cloud=File(run.directory,name)
+        require(run.isClosed && cloud.isFile && cloud.length()>150) {
+            "Requested reconstructed point cloud is unavailable"
+        }
+        val category=if(name==CloudArtifacts.ROI_RECONSTRUCTED_PLY)
+            "ROI_RECONSTRUCTED_PLY" else "OBJECT_MULTIVIEW_PLY"
+        run.event("USER_ACTION","EXPORT_"+category,
+            JSONObject().put("fileKind",name).put("bytes",cloud.length()))
+        try {
+            val output=context.contentResolver.openOutputStream(uri)
+                ?: error("Cannot open selected destination")
+            val count=output.use { sink -> cloud.inputStream().use { it.copyTo(sink) } }
+            run.event("EXPORT_RESULT",category,
+                JSONObject().put("success",true).put("bytes",count))
+            return count
+        } catch(ex:Exception) {
+            run.event("ERROR",category+"_EXPORT",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
     fun latest(): ScanRun? {
         val completed = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
             ?.maxByOrNull { it.name } ?: return null
@@ -220,7 +258,11 @@ class ScanRepository(private val context: Context) {
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
             "object_focus_selection.json", "object_focus_last_failure.json",
-            "early_object_focus_selection.json")
+            "early_object_focus_selection.json",
+            "early_object_reconstruction_report.json",
+            "early_object_reconstruction_last_failure.json",
+            "object_multiview_report.json",
+            "object_multiview_last_failure.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)

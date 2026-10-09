@@ -73,6 +73,12 @@ class ObjectFocusProcessor {
         val tmp=File(run.directory,"early_object_focus_selection.json.tmp")
         tmp.writeText(metadata.toString(2))
         check(tmp.renameTo(target)) { "Could not save early object selection" }
+        // New boxes invalidate only previously derived ROI-first/multi-view
+        // results. Full scene and legacy scene-filter outputs are independent.
+        for(name in listOf(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
+            CloudArtifacts.ROI_RECONSTRUCTED_REPORT,
+            CloudArtifacts.MULTIVIEW_PLY,CloudArtifacts.MULTIVIEW_REPORT))
+            File(run.directory,name).delete()
         run.event("ANALYSIS_RESULT","EARLY_OBJECT_SELECTION",
             JSONObject().put("sourceFrameA",pair.first).put("sourceFrameB",pair.second)
                 .put("status","SELECTED_BEFORE_RECONSTRUCTION"))
