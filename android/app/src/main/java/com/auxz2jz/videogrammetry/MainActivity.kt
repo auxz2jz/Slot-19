@@ -182,7 +182,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var calibrationProgress by mutableStateOf(0f)
         private set
-    var calibrationStatus by mutableStateOf("No camera calibration measured yet")
+    var calibrationStatus by mutableStateOf(
+        if(checkerboardCalibrator.interruptedPreviousRun())
+            "Previous calibration stopped unexpectedly; export ALL Runs + Calibration Diagnostics before retrying."
+        else "No camera calibration measured yet")
         private set
 
     var geometryProgress by mutableStateOf(0f)
