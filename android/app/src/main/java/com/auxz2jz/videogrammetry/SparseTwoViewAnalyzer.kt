@@ -12,6 +12,9 @@ import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.KeyPoint
 import org.opencv.core.Mat
+import org.opencv.core.MatOfDouble
+import org.opencv.core.MatOfPoint3f
+import org.opencv.core.Point3
 import org.opencv.core.MatOfDMatch
 import org.opencv.core.MatOfKeyPoint
 import org.opencv.core.MatOfPoint2f
@@ -36,7 +39,7 @@ class SparseTwoViewAnalyzer {
         fun release() { desc.release(); colors.recycle() }
     }
     private data class Candidate(val report: JSONObject, val vertices: List<SparseVertex>,
-                                 val score: Double)
+                                 val score: Double, val anchorTracks: Map<Int,SparseVertex> = emptyMap())
     private fun checkedFile(run: ScanRun, manifest: JSONArray, index: Int): File {
         val name = manifest.getJSONObject(index).getString("name")
         require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) { "Unsafe image name" }
@@ -180,6 +183,7 @@ class SparseTwoViewAnalyzer {
                 in2.fromList(acceptedIndices.map { coords2[it] })
                 Calib3d.triangulatePoints(P1,P2,in1,in2,X)
                 val points=ArrayList<SparseVertex>()
+                val tracks=HashMap<Int,SparseVertex>()
                 val allAngles=ArrayList<Double>()
                 val allErrors=ArrayList<Double>()
                 for (i in acceptedIndices.indices) {
@@ -202,7 +206,9 @@ class SparseTwoViewAnalyzer {
                     if (!err.isFinite() || err>6.0 || !angle.isFinite()) continue
                     val pix=a.colors.getPixel(p1.x.toInt().coerceIn(0,a.colors.width-1),
                         p1.y.toInt().coerceIn(0,a.colors.height-1))
-                    points.add(SparseVertex(x,y,z,Color.red(pix),Color.green(pix),Color.blue(pix)))
+                    val vertex=SparseVertex(x,y,z,Color.red(pix),Color.green(pix),Color.blue(pix))
+                    points.add(vertex)
+                    tracks[good[index].queryIdx]=vertex
                     allAngles.add(angle); allErrors.add(err)
                 }
                 val medianAngle=median(allAngles)
@@ -214,13 +220,187 @@ class SparseTwoViewAnalyzer {
                     .put("verdict",verdict)
                 val valid=verdict=="TWO_VIEW_SPARSE_CANDIDATE"
                 val score=if(valid) points.size * min(medianAngle,8.0)/8.0 else 0.0
-                return Candidate(report,if(valid)points else emptyList(),score)
+                return Candidate(report,if(valid)points else emptyList(),score,
+                    if(valid)tracks else emptyMap())
             } finally {
                 in1.release();in2.release();P1.release();P2.release();X.release()
             }
         } finally {
             P1points.release();P2points.release();K.release();EMask.release()
             R.release();t.release();poseMask.release();E?.release()
+        }
+    }
+
+
+    /**
+     * Rebuild the original source pair without touching its saved PLY, then
+     * independently verify the SAME 3D anchor points in later saved frames
+     * with descriptor tracks and robust PnP. Not multi-view bundle adjustment.
+     */
+    fun validateThirdView(run: ScanRun, progress: (Int,Int)->Unit): JSONObject {
+        require(run.isClosed && run.resultIsValid()) { "Completed valid capture required" }
+        val original=JSONObject(File(run.directory,"sparse_report.json").readText())
+        require(original.optString("status") == "SPARSE_CANDIDATE") {
+            "First run Analyze Sparse 3D — Two Views"
+        }
+        val chosen=original.getJSONObject("selectedPair")
+        require(chosen.getInt("indexA")==0) { "Unsupported pair anchor" }
+        val middle=chosen.getInt("indexB")
+        val manifest=JSONObject(File(run.directory,"manifest.json").readText())
+        val frames=manifest.getJSONArray("frames")
+        val options=ThirdViewPolicy.thirdIndices(frames.length(),middle)
+        val id=UUID.randomUUID().toString()
+        val out=JSONObject().put("analysisId",id).put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("selectedSourcePair",JSONArray().put(0).put(middle))
+            .put("sourcePairPointCount",original.optInt("pointCount"))
+            .put("sourceIntrinsics","ESTIMATED_NOT_CALIBRATED")
+            .put("method","ORB_3D2D_ANCHOR_TRACKS_PNP_RANSAC")
+            .put("pointScale","UNKNOWN")
+            .put("status","IN_PROGRESS")
+            .put("warning","Reprojection consistency across a third photograph is not full SfM, object-only reconstruction, calibration proof or metric 3D accuracy.")
+        val calibration=File(run.directory.parentFile!!.parentFile,"camera_calibration/last_checkerboard.json")
+        // capture_runs/<runId> -> filesDir/camera_calibration
+        val board=runCatching { JSONObject(calibration.readText()) }.getOrNull()
+        val first=frames.getJSONObject(0)
+        out.put("scanFrameDimensions",JSONArray().put(first.optInt("width")).put(first.optInt("height")))
+        out.put("calibrationCompatibility",
+            if(board==null)"NO_SAVED_CALIBRATION" else ThirdViewPolicy.compatibility(
+                board.optInt("workingWidthPx"),board.optInt("workingHeightPx"),
+                first.optInt("width"),first.optInt("height")))
+        out.put("calibrationWasApplied",false)
+        val rows=JSONArray()
+        run.event("USER_ACTION","VERIFY_THIRD_VIEW",
+            JSONObject().put("analysisId",id).put("candidateThirdViews",options.size))
+        try {
+            if (options.isEmpty()) {
+                out.put("status","INCONCLUSIVE").put("reason","NO_THIRD_FRAME_AFTER_SECOND")
+            } else {
+                check(OpenCVLoader.initLocal()) { "OpenCV native library unavailable" }
+                val orb=ORB.create(1000)
+                try {
+                    val firstFeatures=features(checkedFile(run,frames,0),orb)
+                    try {
+                        val secondFeatures=features(checkedFile(run,frames,middle),orb)
+                        val base=try {
+                            candidate(firstFeatures,secondFeatures,0,middle)
+                        } finally { secondFeatures.release() }
+                        out.put("recomputedSourcePoints",base.anchorTracks.size)
+                        if(base.anchorTracks.size<ThirdViewPolicy.MIN_CORRESPONDENCES) {
+                            out.put("status","INCONCLUSIVE")
+                                .put("reason","BASELINE_RECONSTRUCTION_NOT_REPRODUCIBLE")
+                        } else {
+                            for((ordinal,index) in options.withIndex()) {
+                                val third=features(checkedFile(run,frames,index),orb)
+                                try {
+                                    val item=try {
+                                        validatePnP(firstFeatures,third,base.anchorTracks,index)
+                                    } catch(ex: Exception) {
+                                        JSONObject().put("thirdIndex",index)
+                                            .put("verdict","PNP_RUNTIME_ERROR")
+                                            .put("errorType",ex.javaClass.simpleName)
+                                    }
+                                    rows.put(item)
+                                } finally { third.release() }
+                                progress(ordinal+1,options.size)
+                                run.event("ANALYSIS_PROGRESS","THIRD_VIEW_PNP",
+                                    JSONObject().put("completed",ordinal+1)
+                                        .put("total",options.size))
+                            }
+                            val success=(0 until rows.length()).count {
+                                rows.getJSONObject(it).optString("verdict")=="THIRD_VIEW_CONSISTENT"
+                            }
+                            out.put("consistentThirdViews",success)
+                                .put("attemptedThirdViews",rows.length())
+                                .put("status",if(success>0)"THIRD_VIEW_SUPPORTED" else "INCONCLUSIVE")
+                        }
+                    } finally { firstFeatures.release() }
+                } finally { orb.clear() }
+            }
+            out.put("thirdViewResults",rows)
+            val target=File(run.directory,"third_view_report.json")
+            val temp=File(run.directory,"third_view_report.json.tmp")
+            temp.writeText(out.toString(2))
+            check(temp.renameTo(target)) { "Cannot finalize third-view report" }
+            run.event("ANALYSIS_RESULT","THIRD_VIEW_PNP",
+                JSONObject().put("status",out.optString("status"))
+                    .put("consistentThirdViews",out.optInt("consistentThirdViews")))
+            return out
+        } catch(ex:Exception) {
+            out.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
+            File(run.directory,"third_view_last_failure.json").writeText(out.toString(2))
+            run.event("ERROR","THIRD_VIEW_PNP",
+                JSONObject().put("errorType",ex.javaClass.simpleName)
+                    .put("analysisId",id))
+            throw ex
+        }
+    }
+
+    private fun validatePnP(anchor: Features, third: Features,
+        sourcePoints: Map<Int,SparseVertex>, index: Int): JSONObject {
+        val out=JSONObject().put("thirdIndex",index)
+            .put("anchorSource3dPoints",sourcePoints.size)
+        if(anchor.colors.width!=third.colors.width ||
+            anchor.colors.height!=third.colors.height)
+            return out.put("verdict","DIFFERENT_FRAME_DIMENSIONS")
+        if(anchor.desc.empty() || third.desc.empty())
+            return out.put("verdict","INSUFFICIENT_DESCRIPTORS")
+        val raw=ArrayList<MatOfDMatch>()
+        val pairs=ArrayList<Pair<SparseVertex,Point>>()
+        try {
+            BFMatcher.create(Core.NORM_HAMMING,false).knnMatch(
+                anchor.desc,third.desc,raw,2)
+            val usedThird=HashSet<Int>()
+            for(group in raw) {
+                val n=group.toArray()
+                if(n.size<2 || n[0].distance>=n[1].distance*0.75f) continue
+                val v=sourcePoints[n[0].queryIdx] ?: continue
+                if(!usedThird.add(n[0].trainIdx))continue
+                pairs.add(v to third.keys[n[0].trainIdx].pt)
+            }
+        } finally { raw.forEach { it.release() } }
+        out.put("shared3d2dTracks",pairs.size)
+        if(pairs.size<ThirdViewPolicy.MIN_CORRESPONDENCES)
+            return out.put("verdict","INSUFFICIENT_THREE_VIEW_TRACKS")
+        val objectPoints=MatOfPoint3f()
+        val imagePoints=MatOfPoint2f()
+        val K=Mat.eye(3,3,CvType.CV_64F)
+        val dist=MatOfDouble()
+        val Rv=Mat()
+        val Tv=Mat()
+        val inliers=Mat()
+        val projection=MatOfPoint2f()
+        try {
+            val focal=0.95*maxOf(anchor.colors.width,anchor.colors.height)
+            K.put(0,0,focal);K.put(1,1,focal)
+            K.put(0,2,(anchor.colors.width-1)/2.0)
+            K.put(1,2,(anchor.colors.height-1)/2.0)
+            objectPoints.fromList(pairs.map {
+                Point3(it.first.x,it.first.y,it.first.z)
+            })
+            imagePoints.fromList(pairs.map { it.second })
+            val ok=Calib3d.solvePnPRansac(objectPoints,imagePoints,K,dist,
+                Rv,Tv,false,150,3f,0.99,inliers,Calib3d.SOLVEPNP_EPNP)
+            if(!ok) return out.put("verdict","PNP_RANSAC_REJECTED")
+            val ids=(0 until inliers.rows()).mapNotNull {
+                inliers.get(it,0)?.firstOrNull()?.toInt()
+            }.filter { it in pairs.indices }
+            if(ids.isEmpty())return out.put("verdict","PNP_RANSAC_REJECTED")
+            Calib3d.projectPoints(objectPoints,Rv,Tv,K,dist,projection)
+            val errors=ids.map {
+                val predicted=projection.toArray()[it]
+                val actual=pairs[it].second
+                hypot(predicted.x-actual.x,predicted.y-actual.y)
+            }
+            val error=median(errors)
+            out.put("pnpRansacInliers",ids.size)
+                .put("medianPnPReprojectionPx",
+                    if(error.isFinite())error else JSONObject.NULL)
+                .put("verdict",ThirdViewPolicy.verdict(pairs.size,ids.size,error))
+            return out
+        } finally {
+            objectPoints.release();imagePoints.release();K.release()
+            dist.release();Rv.release();Tv.release();inliers.release();projection.release()
         }
     }
 
