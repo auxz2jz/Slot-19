@@ -81,3 +81,20 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Add more reliable per-frame image similarity/blur evaluation and cross-run source fingerprinting. Keep the simple pixel proxy separate from verified SfM overlap/pose.
 - [ ] Consider storage management with explicit confirmation; 30 smart 12MP JPEGs occupied ~93–109MB in tests and 300 could be near 1GB.
 - [ ] After v0.3 verification, start feature matching/registration evaluation on stationary-object handheld motion. Compare true registration coverage/geometry before making automatic “optimal FPS” assertions.
+
+## Verified v0.3.0 capture milestone and experimental v0.4.0 geometry
+
+- [x] **v0.3.0 LAST USER-VERIFIED ANDROID CAPTURE BASELINE:** user confirmed all three capture methods, displayed images, adjustable FPS controls worked. Tested source `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` preserved `backup/android-v0.3.0-user-verified-capture`. No 3D claim.
+- [x] Preserve older v0.2.0 and v0.1.0 baselines, and unmodified Windows historical source.
+- [x] Design optional per-run geometric diagnostics using `org.opencv:opencv:4.12.0`, rather than confusing pixel-change proxies with verified correspondences.
+- [x] Add `Analyze Latest Run — ORB Geometry` after a completed run; do not block ongoing CameraX capture or modify saved JPGs.
+- [x] Analyze at most ~80 pairs (including first/last), max edge 640 px, ~800 ORB keypoints, Hamming matcher ratio 0.75, fundamental-matrix RANSAC.
+- [x] Save actual `featuresA/B`, `ratioTestMatches`, `fundamentalRansacInliers`, `inlierRatioOfMatches`, status and error details for every sampled neighboring pair.
+- [x] Integrate `geometry_report.json`, `geometry_pairs.jsonl`, `geometry_last_failure.json` into both latest-run ZIP and all-runs ZIP.
+- [x] Add JVM `GeometryPolicyTest.kt` validating sampling bounds and strict weak/consistent verdicts; GitHub run `37905706664` triggered for Android-only v0.4.0 candidate.
+- [ ] Confirm GitHub OpenCV AAR resolution, Kotlin compile/tests, APK hash and archive; fix only actual source errors and preserve artifact snapshot.
+- [ ] User tests ORB on multiple neighboring photographs with texture, featureless/similar views, and exports geometry ZIP; confirm 3 capture modes remain fully functional.
+- [ ] Only user physical confirmation can upgrade v0.4.0 to VERIFIED.
+- [ ] Future true camera pose: intrinsics from calibration/metadata, robust multi-view correspondences and SfM with triangulation/BA; diagnose low-parallax, planar/background degeneracy.
+- [ ] Later compare actual registration success across 1/3/5 FPS before claiming an optimal capture rate; ORB epipolar pair support alone does not establish good 3D coverage.
+
