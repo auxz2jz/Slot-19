@@ -101,7 +101,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private var disposed = false
     private var currentRun = repository.latest()
 
-    var status by mutableStateOf("Ready — no 3D reconstruction engine in v0.1.0")
+    var status by mutableStateOf("Ready — Android v" + BuildConfig.VERSION_NAME + " (experimental two-view sparse 3D)")
         private set
     var cameraBound by mutableStateOf(false)
         private set
@@ -801,6 +801,14 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Records suggested filename; Android's document picker may allow renaming. */
+    fun logExportName(kind: String, proposedFileName: String) {
+        currentRun?.event("USER_ACTION", "EXPORT_NAME_SUGGESTED",
+            JSONObject().put("kind", kind)
+                .put("suggestedFileName", proposedFileName)
+                .put("exportingAppVersion", BuildConfig.VERSION_NAME))
+    }
+
     fun recordTest(looksCorrect: Boolean) {
         val run = currentRun
         if (run == null || !run.isClosed) {
@@ -909,7 +917,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Video 3D Capture Lab", style = MaterialTheme.typography.headlineSmall)
-            Text("Android v0.6.0 CANDIDATE — Built-in point viewer + checkerboard calibration")
+            Text("Android v" + BuildConfig.VERSION_NAME + " — Built-in point viewer + checkerboard calibration")
             Text("Keep the object stationary; move the phone slowly around it.")
             val settings = coordinator.editingOptions
             val editingAllowed = !coordinator.liveSampling && !coordinator.smartSampling &&
@@ -1063,7 +1071,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         Text("Open a PLY File to View")
                     }
                     Button(onClick = {
-                        plyPicker.launch("Android-v0.5.0-sparse-two-view.ply")
+                        coordinator.latestRun?.let { run ->
+                            val name = ExportNames.sparsePly(BuildConfig.VERSION_NAME, run.id)
+                            coordinator.logExportName("SPARSE_PLY", name)
+                            plyPicker.launch(name)
+                        }
                     }, enabled = coordinator.sparseAvailable &&
                         !coordinator.sparseAnalyzing && !coordinator.geometryAnalyzing &&
                         !coordinator.importing && !coordinator.liveSampling &&
@@ -1103,16 +1115,23 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 Text("Test This Version")
             }
             Button(onClick = {
-                exportPicker.launch("Android-v0.6.0-last-run-diagnostics.zip")
+                coordinator.latestRun?.let { run ->
+                    val name = ExportNames.latestRunZip(BuildConfig.VERSION_NAME, run.id)
+                    coordinator.logExportName("LATEST_RUN_ZIP", name)
+                    exportPicker.launch(name)
+                }
             }, enabled = latest != null && latest.isClosed && !coordinator.geometryAnalyzing) {
                 Text("Export Test + Diagnostics")
             }
             Button(onClick = {
-                historyPicker.launch("Android-v0.6.0-ALL-run-comparison.zip")
+                val name = ExportNames.allRunsZip(BuildConfig.VERSION_NAME)
+                coordinator.logExportName("ALL_RUNS_ZIP", name)
+                historyPicker.launch(name)
             }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
                 !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
                 Text("Export ALL Runs + FPS Comparison")
             }
+            Text("Export filenames automatically include the installed version, run ID (when applicable) and UTC time. Older run metadata keeps its original creation version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Reconstruction engines: NOT IMPLEMENTED.",
@@ -1128,7 +1147,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
 
     if (showGuide) AlertDialog(
         onDismissRequest = { showGuide = false },
-        title = { Text("Test This Version — v0.6.0") },
+        title = { Text("Test This Version — v" + BuildConfig.VERSION_NAME) },
         text = { Text("1. Choose Video (a handheld recording circling a stationary object), " +
             "or Start Live Sampling, or Start Smart Auto Capture to take photos " +
             "when the image is steady, sharp and sufficiently different.\n\n" +
