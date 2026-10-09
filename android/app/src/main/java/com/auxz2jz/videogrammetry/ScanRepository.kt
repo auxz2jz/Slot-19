@@ -163,6 +163,28 @@ class ScanRepository(private val context: Context) {
         }
     }
 
+    /** Object-only candidate is opt-in. Never overwrite the full-scene PLY. */
+    fun exportObjectFocusPly(run: ScanRun, uri: Uri): Long {
+        val cloud=File(run.directory,"sparse_object_focus.ply")
+        check(run.isClosed && cloud.isFile && cloud.length()>150) {
+            "No object-focus candidate; select the object in both source images first"
+        }
+        run.event("USER_ACTION","EXPORT_OBJECT_FOCUS_PLY",
+            JSONObject().put("bytes",cloud.length()))
+        try {
+            val destination=context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Cannot open object PLY destination")
+            val count=destination.use { output -> cloud.inputStream().use { it.copyTo(output) } }
+            run.event("EXPORT_RESULT","OBJECT_FOCUS_PLY",
+                JSONObject().put("success",true).put("bytes",count))
+            return count
+        } catch(ex:Exception) {
+            run.event("ERROR","OBJECT_FOCUS_PLY_EXPORT",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
     fun latest(): ScanRun? {
         val completed = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
             ?.maxByOrNull { it.name } ?: return null
