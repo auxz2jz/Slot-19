@@ -764,6 +764,50 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Real selected source pair photos, from saved sparse analysis. */
+    fun objectFocusSourcePhotos(): Pair<File,File>? {
+        if (objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            geometryAnalyzing || importing || liveSampling || smartSampling) {
+            objectFocusMessage="Finish the active capture or analysis first"
+            return null
+        }
+        val run=currentRun ?: return null
+        return try {
+            val photos=ObjectFocusProcessor().sourcePhotos(run)
+            run.event("USER_ACTION","OPEN_OBJECT_FOCUS_SELECTOR")
+            photos
+        } catch(ex:Exception) {
+            objectFocusMessage="Re-run Analyze Sparse 3D — Two Views on this capture " +
+                "to make image selection available ("+ex.javaClass.simpleName+")"
+            null
+        }
+    }
+
+    fun applyObjectFocus(first: FocusRect, second: FocusRect) {
+        val run=currentRun ?: return
+        if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            geometryAnalyzing || liveSampling || smartSampling || importing)return
+        objectFocusWorking=true
+        objectFocusMessage="Matching 3D points against both object rectangles..."
+        geometryWorker.execute {
+            try {
+                val report=ObjectFocusProcessor().apply(run,first,second)
+                ui {
+                    objectFocusAvailable=File(run.directory,"sparse_object_focus.ply").isFile()
+                    savedClouds=repository.savedPlyEntries()
+                    objectFocusMessage=report.optString("status") + ": " +
+                        report.optInt("objectCandidatePoints") + " kept; " +
+                        report.optInt("excludedScenePoints") + " excluded. " +
+                        "Original scene PLY unchanged."
+                    status="Object-focus report saved. Compare full-scene and focused clouds."
+                }
+            } catch(ex:Exception) {
+                ui { objectFocusMessage="Object focus failed: "+ex.javaClass.simpleName +
+                    ". Full-scene PLY remains unchanged; export diagnostics." }
+            } finally { ui { objectFocusWorking=false } }
+        }
+    }
+
     fun exportSparsePly(uri: Uri) {
         val run = currentRun ?: return
         if (sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
