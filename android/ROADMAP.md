@@ -187,3 +187,14 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] GitHub Actions latest v0.8.0 compile/test and downloadable artifact hashes confirmed.
 - [ ] User physically draws correct boxes in 2 real photos, compares original vs filtered 3D clouds, exports standalone PLYs/ZIP and confirms no original PLY regression.
 - [ ] Later improve true object/background masks, camera-compatible intrinsic handling and multi-view SfM, but only after user feedback on ROI filtering quality.
+
+
+## v0.8.1 — Fix broken v0.8.0 object selection interaction
+- [x] User report and ZIP confirmed 300 video source frames and 158 sparse points PASS, selection tool opened but one finger could not draw, photo was too small, accidental two-finger box offset, Create could not proceed. No APPLY_OBJECT_FOCUS event. This is a UI bug, not a proven geometry failure.
+- [x] Replace two tiny photos in nested scrolling dialog with FULL-HEIGHT one-photo-at-a-time wizard: Photo 1 (select) → Next Photo → Photo 2 (select) → Create PLY. Back preserves prior selection.
+- [x] Native large image single-finger Draw box mode, visible green drag rectangle, explicit gesture interception, reject multi-touch as selection, buttons to zoom 1–5x and Move mode to pan; normalized image coordinates maintained.
+- [x] Low-volume diagnostic actions for draw validity, next/back, zoom, mode, Create; guided Test This Version revised and failure evidence checkpointed.
+- [x] New patch v0.8.1 source PR #9, restore from protected failed v0.8.0 and user-verified v0.7.0 if needed.
+- [ ] Run GitHub Actions `37996729999`; correct compiler errors if any; preserve CI-success source and APK SHA.
+- [ ] Phone: one finger drag around object Photo1, Next Photo, same object Photo2, Create; see kept point counts, separate object PLY, original scene still viewable; send diagnostic ZIP.
+- [ ] v0.8.1 USER verified only after user confirms these controls work. No automatic semantic segmentation or physical dimensions claimed.
