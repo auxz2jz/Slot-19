@@ -27,3 +27,14 @@ Android owns `android/` and `.github/workflows/android-build.yml` only, with pla
 
 ## Exact next action
 Build verification DONE; user-device verification PENDING. User tests slider effects using identical video at 0.5,1,2,3 FPS and checks useful viewpoints/overlap, then exports the ALL Runs ZIP. Use evidence to tune capture rate and later add actual feature matching; do not mark v0.3 verified until user confirms. Windows not affected.
+
+
+## Latest v0.3.0 on-device evidence (ZIPs received; capture validation PASS, human verification pending)
+
+The user uploaded both latest-run and **ALL Runs + FPS Comparison** v0.3.0 ZIPs. Both passed ZIP integrity. All-run summary includes **9 completed independent run IDs, 549 saved JPEGs, 267,721,254 saved JPEG bytes**, across live camera (3), recorded video (4), smart auto (2). **Every run reports validated PASS; no error events.** Last-run ZIP is the final 30-photo smart run and matches the all-run manifest/result. All-run ZIP is now confirmed to actually include previous runs.
+
+Observed Live 1 FPS -> 30 at ~0.98; Live 2 FPS -> 50 at ~1.95; Smart 0.5 shutter cap -> 30 at ~0.44; Smart 1 shutter cap -> 30 at ~0.73; imported video 1 FPS -> 40; 3 FPS -> 40 and 152; 5 FPS -> 170. JPEG dimensions: Live 1088×1088, Smart 4000×3000, imported video 720×1280. Uploaded reports contain NO manually confirmed v0.3 guided-test PASS and no actual JPEG payloads.
+
+**Important semantic limitation:** recorded-video `measuredFps` is calculated from requested source timestamps, so exact 1/3/5 values do not prove decoding capacity/actual presentation times. `processingElapsedMs` indicates throughput around 4–5 saved JPEGs/sec for these imports. For first 33.8 sec of the recording, the near-duplicate appearance proxy was 0/33 at 1 FPS, approximately 6/101 at 3 FPS, and 59/169 at 5 FPS. These are NOT actual duplicate files and NOT proven geometric overlap. Distinct full-run temporal coverage prevents naive global comparisons. **Recommendation: 1 FPS default and test 3 FPS if extra viewpoints useful; 5 FPS shows many more near-similar adjacent frames on these captures.**
+
+See `android/CHECKPOINT.md` for all exact run IDs, ZIP hashes, observed metrics, caveats and next steps. **v0.3.0 remains USER-UNVERIFIED pending explicit user visual confirmation**. Preserve v0.2.0 last user-verified capture-only baseline and v0.3.0 candidate. Future focus: accurate diagnostics labeling, actual feature matching/overlap, selectable frame set review and quality-aware selection before claiming best reconstruction rate. Android docs only; Windows project untouched.
