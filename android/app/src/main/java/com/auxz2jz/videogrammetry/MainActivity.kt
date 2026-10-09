@@ -1003,6 +1003,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val plyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if (uri != null) coordinator.exportSparsePly(uri) }
+    val objectPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri != null) coordinator.exportObjectFocusPly(uri) }
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -1012,6 +1015,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val preview = remember { PreviewView(context) }
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
+    var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
         if (coordinator.previewFile.isBlank()) null else {
@@ -1272,6 +1276,16 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             Text("Reconstruction: experimental two-view sparse points plus independent third-view pose check; no dense model.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+
+    focusPhotos?.let { photos ->
+        ObjectFocusDialog(
+            photos=photos,
+            onDismiss={focusPhotos=null},
+            onConfirm={first,second ->
+                focusPhotos=null
+                coordinator.applyObjectFocus(first,second)
+            })
     }
 
     if (showCloudViewer) SparseViewerDialog(
