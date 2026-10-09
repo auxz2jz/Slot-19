@@ -98,3 +98,15 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Future true camera pose: intrinsics from calibration/metadata, robust multi-view correspondences and SfM with triangulation/BA; diagnose low-parallax, planar/background degeneracy.
 - [ ] Later compare actual registration success across 1/3/5 FPS before claiming an optimal capture rate; ORB epipolar pair support alone does not establish good 3D coverage.
 
+
+## v0.5.0 — first EXPLICITLY UNCALI­BRATED TWO-view sparse reconstruction candidate
+
+- [x] Promote user-confirmed v0.4.0 capture and ORB matching analysis to verified baseline after 9 PASS capture sessions and 8 COMPLETE ORB reports; protect source in `backup/android-v0.4.0-user-verified-orb`.
+- [x] Isolate two-view pose and triangulation behind `Analyze Sparse 3D — Two Views` button; never disturb the three original frame/photo capture modes or ORB analysis.
+- [x] Add actual OpenCV Essential-matrix RANSAC, relative pose cheirality, triangulation, bounded first-view partner candidates and conservative parallax/3D point/reprojection acceptance gates.
+- [x] Record camera model as `ESTIMATED_NOT_CALIBRATED`, translation baseline scale as arbitrary units and output PLY as experimental only; no multi-view/dense geometry claim.
+- [x] Add `sparse_report.json` and `sparse_last_failure.json` to redacted latest/all-run diagnostic ZIPs; PLY exported separately after the user explicitly chooses file destination.
+- [x] Add pure-JVM `SparsePolicyTest.kt` for candidate pair bounds, failure verdicts and PLY format.
+- [ ] CI build/run `37910662990` after one targeted Kotlin syntax fix; inspect result and artifact hash. Preserve final source.
+- [ ] User tests two-view pose on a textured stationary object with actual camera translation; exports sparse PLY and diagnostics and reviews point-cloud shape. Negative case with near-stationary/featureless view must be inconclusive when appropriate.
+- [ ] Prioritize real camera calibration, lens-distortion handling, background/object features, and robust multi-view global poses plus bundle adjustment before claiming a finished 3D model.
