@@ -17,6 +17,7 @@ import java.io.File
  */
 @Composable
 fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
+    onUiEvent:(String,Int)->Unit,
     onConfirm:(FocusRect,FocusRect)->Unit) {
     val context=LocalContext.current
     val first=remember(photos.first.absolutePath) {
@@ -33,12 +34,18 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
     var message by remember { mutableStateOf("Drag ONE finger around the object in Photo 1.") }
     val view=if(step==0)first else second
     first.selectionFinished={ roi ->
-        if(step==0)message=if(roi==null) "Box too small. Drag across the object."
-            else "Photo 1 selected. Tap NEXT PHOTO to continue."
+        if(step==0) {
+            onUiEvent(if(roi==null)"DRAW_INVALID" else "DRAW_VALID",1)
+            message=if(roi==null) "Box too small. Drag across the object."
+                else "Photo 1 selected. Tap NEXT PHOTO to continue."
+        }
     }
     second.selectionFinished={ roi ->
-        if(step==1)message=if(roi==null) "Box too small. Drag across the object."
-            else "Photo 2 selected. Tap CREATE OBJECT PLY."
+        if(step==1) {
+            onUiEvent(if(roi==null)"DRAW_INVALID" else "DRAW_VALID",2)
+            message=if(roi==null) "Box too small. Drag across the object."
+                else "Photo 2 selected. Tap CREATE OBJECT PLY."
+        }
     }
     Dialog(onDismissRequest=onDismiss,
         properties=DialogProperties(usePlatformDefaultWidth=false)) {
@@ -54,16 +61,26 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
                     "MOVE: drag to pan when zoomed. Use + or − to zoom.",
                     style=MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                    Button(onClick={moving=false;view.setPanMode(false)},
+                    Button(onClick={
+                        moving=false;view.setPanMode(false)
+                        onUiEvent("MODE_DRAW",step+1)
+                    },
                         modifier=Modifier.weight(1f)) {
                         Text(if(!moving)"✓ Draw box" else "Draw box")
                     }
-                    OutlinedButton(onClick={moving=true;view.setPanMode(true)},
+                    OutlinedButton(onClick={
+                        moving=true;view.setPanMode(true)
+                        onUiEvent("MODE_MOVE",step+1)
+                    },
                         modifier=Modifier.weight(1f)) {
                         Text(if(moving)"✓ Move" else "Move")
                     }
-                    OutlinedButton(onClick={view.zoomBy(1.5f)}) {Text("+")}
-                    OutlinedButton(onClick={view.zoomBy(1f/1.5f)}) {Text("−")}
+                    OutlinedButton(onClick={
+                        view.zoomBy(1.5f);onUiEvent("ZOOM_IN",step+1)
+                    }) {Text("+")}
+                    OutlinedButton(onClick={
+                        view.zoomBy(1f/1.5f);onUiEvent("ZOOM_OUT",step+1)
+                    }) {Text("−")}
                 }
                 // No verticalScroll ancestor: one-finger drags reach the native view.
                 // The photo occupies nearly all remaining available screen height.
@@ -77,6 +94,7 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
                         if(step==0)onDismiss()
                         else {
                             step=0;moving=false;first.setPanMode(false)
+                            onUiEvent("BACK_PHOTO",1)
                             message="Photo 1: adjust the box or tap NEXT PHOTO."
                         }
                     },modifier=Modifier.weight(1f)) {
@@ -84,12 +102,14 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
                     }
                     OutlinedButton(onClick={
                         view.resetView();moving=false
+                        onUiEvent("RESET_VIEW",step+1)
                     }) {Text("Reset view")}
                     Button(onClick={
                         if(step==0) {
                             if(first.selected==null)message="Draw a box on Photo 1 first."
                             else {
                                 step=1;moving=false;second.setPanMode(false)
+                                onUiEvent("NEXT_PHOTO",2)
                                 message=if(second.selected!=null)
                                     "Photo 2 selected. Tap CREATE, or draw again."
                                     else "Now draw ONE box on Photo 2."
@@ -99,7 +119,10 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
                             val b=second.selected
                             if(a==null || b==null)
                                 message="Draw around the object in BOTH photographs first."
-                            else onConfirm(a,b)
+                            else {
+                                onUiEvent("CREATE_REQUEST",2)
+                                onConfirm(a,b)
+                            }
                         }
                     },modifier=Modifier.weight(1.35f)) {
                         Text(if(step==0)"Next Photo →" else "Create Object PLY")
