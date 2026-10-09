@@ -140,3 +140,14 @@ This is **subjective but valuable device visual evidence**: do not claim verifie
 - Pure JVM `ObjectFocusPolicyTest` covers dual-source gating, bounds and invalid rectangles. `ExportNamesTest` tests separate v0.8.0 object-focused filename; Gradle `versionCode=9, versionName=0.8.0`, GitHub APK naming remains automatic.
 
 **Next:** Inspect latest GitHub CI for compile/tests, resolve any actual Kotlin error via minimal patch, snapshot exact compiled SHA and build artifacts, independently verify APK hashes. User on Samsung must test: rerun original sparse analysis to build map (for older source), draw two boxes around physical target, compare Full Scene/Object Focus clouds, verify count of points and original PLY integrity, export both PLYs/latest/all diagnostics, then deliberately select empty or background boxes. Keep v0.7 verified viewer baseline until device confirmation. Calibration aspect incompatibility remains unresolved and K is still NOT automatically applied.
+
+
+## v0.8.0 build verified and candidate handoff (2026-10-09)
+
+- Exact compiled source `2f7ff98aafcf49d8474d8045d008692468d3fac6`, protected `backup/android-v0.8.0-object-focus-ci-candidate`; earlier feature merge `fe8ba7687523e71246dca6e40f3aa490be1f454b`.
+- GitHub Actions `37987114085` **SUCCESS** (JVM unit tests, Android compilation, debug APK, checksums, artifact upload), artifact `video3d-android-v0.8.0-candidate`, ID `11642883179`. Initial build `37987043006` also succeeded, but final candidate includes the updated test guide.
+- ARM64 APK: `Video3DCapture-Android-v0.8.0-ARM64-CANDIDATE.apk`, 36,519,257 bytes, SHA256 `b7baeaab39fc572d06ac2e3b4a381b92504dd4330c4b711797ff2ba3b22dd3ec`.
+- Universal APK: `Video3DCapture-Android-v0.8.0-UNIVERSAL-CANDIDATE.apk`, 153,354,867 bytes, SHA256 `8a9c07f04ef57c3e388d7c8ecf1028ffd41e167433f057521575c33b2056166c`.
+- Actual downloaded artifact ZIP passed integrity check, both APK SHA256 matched GitHub manifest. Windows root files checked unchanged by Git blob hashes; Slot-8 untouched.
+- **v0.8.0 remains UNVERIFIED ON PHONE.** Last user-confirmed v0.7 PLY viewer and v0.6.1 broad fallback remain on protected backups. Native Object Focus in v0.8.0 must be physically tested.
+- Device test: make/reanalyze two-view scan, select the object in BOTH real saved source photos, inspect kept/excluded counts, compare two native viewer choices, export full scene and object-only PLY, check old PLY preserved, export both ZIPs. Old v0.7 stored clouds require re-running the two-view stage once to create the point-projection map. Verify no points yields NO_POINTS rather than false geometry. Generated focused points still not an accurate semantic object mesh or scaled 3D.
