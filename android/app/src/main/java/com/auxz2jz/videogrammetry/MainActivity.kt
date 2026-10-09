@@ -166,6 +166,18 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var objectFocusAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
         private set
+    var reconstructedAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile() } ?: false)
+        private set
+    var multiviewAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,CloudArtifacts.MULTIVIEW_PLY).isFile() } ?: false)
+        private set
+    var multiviewWorking by mutableStateOf(false)
+        private set
+    var multiviewProgress by mutableStateOf(0f)
+        private set
+    var multiviewMessage by mutableStateOf("Multi-view not checked yet")
+        private set
     var objectFocusWorking by mutableStateOf(false)
         private set
     var objectFocusMessage by mutableStateOf("Object focus not selected yet")
@@ -641,7 +653,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
             earlyObjectSelected = File(run.directory,"early_object_focus_selection.json").isFile()
-            objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+            objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
+            reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
+            multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
@@ -705,8 +719,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     /** Experimental relative two-view pose, unknown scale; no validated full scan. */
     fun analyzeSparseTwoView() {
-        if (sparseAnalyzing || geometryAnalyzing || importing ||
-            liveSampling || smartSampling) {
+        if (sparseAnalyzing || geometryAnalyzing || multiviewWorking ||
+            importing || liveSampling || smartSampling) {
             status = "Finish other captures/analyses before sparse 3D"
             return
         }
@@ -718,6 +732,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         sparseAnalyzing = true
         sparseAvailable = false
         objectFocusAvailable = false
+        reconstructedAvailable = false
+        multiviewAvailable = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -744,7 +760,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
-                    objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+                    objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
+                    reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
+                    multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
                     objectFocusMessage = if(early!=null)
                         early.optString("status") + ": " +
                         early.optInt("objectCandidatePoints") +
@@ -887,7 +905,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     fun applyObjectFocus(first: FocusRect, second: FocusRect) {
         val run=currentRun ?: return
         if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
-            geometryAnalyzing || liveSampling || smartSampling || importing)return
+            geometryAnalyzing || multiviewWorking || liveSampling || smartSampling || importing)return
         objectFocusWorking=true
         objectFocusMessage="Matching 3D points against both object rectangles..."
         geometryWorker.execute {
