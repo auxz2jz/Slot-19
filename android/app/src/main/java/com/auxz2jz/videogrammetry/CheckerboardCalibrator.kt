@@ -24,6 +24,8 @@ import java.util.UUID
  */
 class CheckerboardCalibrator(private val context: Context) {
     private val root = File(context.filesDir,"camera_calibration").also { it.mkdirs() }
+    fun interruptedPreviousRun(): Boolean =
+        File(root,"calibration_in_progress.json").isFile
     fun saved(): String? = File(root,"last_checkerboard.json")
         .takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
 
@@ -62,6 +64,12 @@ class CheckerboardCalibrator(private val context: Context) {
                 .put("details",extra)
             File(root,"events.jsonl").appendText(data.toString()+"\n")
         }
+        File(root,"calibration_in_progress.json").writeText(
+            JSONObject().put("calibrationId",runId)
+                .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+                .put("selectedPhotoCount",images.size)
+                .put("startedUtcMs",System.currentTimeMillis())
+                .put("status","IN_PROGRESS_NOT_PROOF_OF_CRASH").toString(2))
         event("CALIBRATION_REQUEST",JSONObject().put("selected",images.size)
             .put("priorVideoRequired",false).put("maxDecodeDimensionPx",1200))
         try {
@@ -181,6 +189,7 @@ class CheckerboardCalibrator(private val context: Context) {
             objectPoints.forEach{it.release()}
             imagePoints.forEach{it.release()}
             File(root,"last_attempt.json").writeText(report.toString(2))
+            File(root,"calibration_in_progress.json").delete()
         }
     }
 }
