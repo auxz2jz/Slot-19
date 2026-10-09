@@ -17,7 +17,7 @@ class CloudArtifactsTest {
         val run="20261009T224303Z_d8cd8225-5"
         val names=setOf(
             ExportNames.sparsePly("0.10.0",run,0),
-            ExportNames.objectFocusPly("0.10.0",run,0),
+            ExportNames.filteredScenePly("0.10.0",run,0),
             ExportNames.reconstructedPly("0.10.0",run,0),
             ExportNames.multiviewPly("0.10.0",run,0))
         assertEquals(4,names.size)
