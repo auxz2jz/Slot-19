@@ -214,3 +214,13 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Calibration BEFORE video import crash unresolved; do not infer it is fixed based on successful post-import calibration.
 - [ ] Rotation cancel/reset during active analysis unresolved; preserve operation state through Activity recreation.
 - [ ] Zoom/pan/Back in ROI selector not individually confirmed. Object shape accuracy NOT established; current filtering does not create extra 3D points. Future possible redesign: select object before object-specific matching/triangulation, with scene features for camera pose.
+
+
+## v0.9.0 shipped-code candidate goals — device testing required
+- [x] Preserve v0.8.1 user-confirmed object selection/focused exports in protected source branch before changes.
+- [x] Add opt-in two-frame ROI selection BEFORE any sparse cloud, with stored 2D rectangles and separate masked ORB matching (2400 features), independent object-priority sparse points plus unchanged full-scene PLY. Distinct coordinate frames; do not claim multi-view SfM or shared metric geometry.
+- [x] Prevent ordinary phone rotation from recreating Activity/shutting down worker, record active phase. Actual multi-operation rotation test still user pending.
+- [x] Calibration-first safety changes: unbind idle CameraX before OpenCV and rebind after, reduce working image max to 1200px, interrupted-calibration marker, permit export calibration-only ZIP when no video has ever been imported. Actual pre-import native crash root cause unresolved pending phone test.
+- [x] Build app v0.9.0 preview side-by-side (`applicationIdSuffix=.preview090`) to protect v0.8.1 app-private frame archives from ephemeral debug signing/uninstall.
+- [ ] GitHub latest compile/tests & APK SHA verification, source recovery snapshot and phone tests.
+- [ ] User must confirm calibration-first no crash, rotation workflow survives, object-first PLY is nonempty or meaningfully inconclusive with saved diagnostics, legacy selection/third view unaffected. Distinguish one UI pass from verified geometric quality.
