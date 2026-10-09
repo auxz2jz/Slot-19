@@ -128,7 +128,8 @@ class ScanRepository(private val context: Context) {
                 }
                 val calDir = File(context.filesDir, "camera_calibration")
                 for (name in listOf("last_checkerboard.json",
-                    "last_attempt.json", "events.jsonl")) {
+                    "last_attempt.json", "events.jsonl",
+                    "calibration_in_progress.json")) {
                     val source = File(calDir,name)
                     if (source.isFile) add("calibration/"+name,source.readBytes())
                 }
