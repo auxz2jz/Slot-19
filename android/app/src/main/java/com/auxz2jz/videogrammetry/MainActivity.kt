@@ -1023,13 +1023,14 @@ class CaptureCoordinator(private val activity: MainActivity) {
         geometryWorker.execute {
             try {
                 val points = entry.file.inputStream().use {
-                    PlyParser.parse(it, "Run " + entry.runId.takeLast(12))
+                    PlyParser.parse(it,entry.sourceKind + " · " +
+                        entry.runId.takeLast(8))
                 }
                 currentRun?.event("USER_ACTION", "VIEW_SAVED_PLY", JSONObject()
                     .put("selectedRunId",entry.runId).put("pointCount",points.count))
                 ui {
                     viewerCloud = points
-                    viewerStatus = points.count.toString() +
+                    viewerStatus = entry.sourceKind + ": " + points.count +
                         " colored points. Rotate or zoom; physical scale unknown."
                 }
             } catch (ex: Exception) {
@@ -1675,7 +1676,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
             "or switch to Move to pan a zoomed image. Tap Next Photo. " +
             "Draw the same object in Photo 2 and tap Create Object PLY. " +
-            "Compare Full scene vs Object focus saved clouds, verify kept and excluded " +
+            "NEW: Compare Full scene, ROI-First Reconstruction and Filtered Scene as distinct clouds, " +
+            "and export each to different filenames. Then tap Build Multi-View Object Cloud, " +
+            "inspect registered third-camera count and NEW triangulated XYZ points, " +
+            "compare ROI-first and multi-view from the same relative coordinate frame. " +
             "point counts, then export each separate PLY. Use a bad/empty region to test " +
             "the inconclusive path. New diagnostics should contain object_focus_report.json.") },
         confirmButton = {
