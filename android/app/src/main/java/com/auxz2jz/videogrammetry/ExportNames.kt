@@ -32,6 +32,11 @@ object ExportNames {
         "Android-" + normalizedVersion(versionName) + "-sparse-two-view-" +
             checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
 
+    fun objectFocusPly(versionName: String, runId: String,
+                       timeUtcMs: Long = System.currentTimeMillis()): String =
+        "Android-" + normalizedVersion(versionName) + "-object-focus-" +
+            checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
+
     fun latestRunZip(versionName: String, runId: String,
                      timeUtcMs: Long = System.currentTimeMillis()): String =
         "Android-" + normalizedVersion(versionName) + "-last-run-diagnostics-" +
