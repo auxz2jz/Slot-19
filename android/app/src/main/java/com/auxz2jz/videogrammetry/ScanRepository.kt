@@ -69,7 +69,8 @@ class ScanRepository(private val context: Context) {
             "sparse_report.json", "sparse_last_failure.json",
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
-            "object_focus_selection.json", "object_focus_last_failure.json")
+            "object_focus_selection.json", "object_focus_last_failure.json",
+            "early_object_focus_selection.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -214,7 +215,8 @@ class ScanRepository(private val context: Context) {
             "sparse_report.json", "sparse_last_failure.json",
             "third_view_report.json", "third_view_last_failure.json",
             "sparse_point_projections.json", "object_focus_report.json",
-            "object_focus_selection.json", "object_focus_last_failure.json")
+            "object_focus_selection.json", "object_focus_last_failure.json",
+            "early_object_focus_selection.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)
