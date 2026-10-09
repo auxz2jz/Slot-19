@@ -1,6 +1,7 @@
 package com.auxz2jz.videogrammetry
 
 import android.Manifest
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -72,6 +73,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         capture = CaptureCoordinator(this)
         setContent { CaptureScreen(capture) }
+    }
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Normal phone rotation must NOT destroy active frame extraction,
+        // calibration or geometry workers and must NOT reset their progress.
+        capture.onConfigurationChanged(newConfig.orientation)
     }
     override fun onDestroy() {
         capture.shutdown()
@@ -214,11 +221,31 @@ class CaptureCoordinator(private val activity: MainActivity) {
         if (!disposed) activity.runOnUiThread { if (!disposed) action() }
     }
 
+    fun onConfigurationChanged(orientation: Int) {
+        val phase=when {
+            importing -> "VIDEO_IMPORT"
+            calibrating -> "CHECKERBOARD_CALIBRATION"
+            geometryAnalyzing -> "ORB_GEOMETRY"
+            sparseAnalyzing -> "SPARSE_3D"
+            thirdViewAnalyzing -> "THIRD_VIEW"
+            objectFocusWorking -> "OBJECT_FOCUS"
+            liveSampling -> "LIVE_CAMERA"
+            smartSampling -> "SMART_CAMERA"
+            else -> "IDLE"
+        }
+        currentRun?.event("STATE_TRANSITION","DEVICE_ORIENTATION_CHANGED",
+            JSONObject().put("orientation",orientation).put("activePhase",phase)
+                .put("operationPreserved",true))
+        // CameraX PreviewView resizes/reorients with the existing view and display.
+        // No unbindAll()/shutdown on orientation change.
+    }
+
     fun bindCamera(view: PreviewView) {
         val future = ProcessCameraProvider.getInstance(activity)
         future.addListener({
             try {
                 val cameraProvider = future.get()
+                if (calibrating || disposed) return@addListener
                 provider = cameraProvider
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder()
