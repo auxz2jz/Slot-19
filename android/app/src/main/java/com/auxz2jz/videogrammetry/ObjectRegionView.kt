@@ -153,7 +153,6 @@ class ObjectRegionView(context: Context): View(context) {
                     }
                     draft=null
                     selected=null
-                    selectionFinished?.invoke(null)
                     invalidate()
                 }
                 return true
