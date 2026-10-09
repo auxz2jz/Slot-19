@@ -37,17 +37,22 @@ class ScanRepository(private val context: Context) {
 
     fun savedPlyEntries(): List<SavedPlyEntry> =
         (root.listFiles() ?: emptyArray()).filter { it.isDirectory }
-            .mapNotNull { folder ->
-                val file = File(folder, "sparse_two_view.ply")
-                if (!file.isFile) return@mapNotNull null
-                val meta = runCatching {
-                    JSONObject(File(folder,"sparse_report.json").readText())
-                }.getOrNull()
-                val source = runCatching {
+            .flatMap { folder ->
+                val source=runCatching {
                     JSONObject(File(folder,"result.json").readText()).optString("sourceKind")
                 }.getOrDefault("unknown")
-                SavedPlyEntry(folder.name,source,file,meta?.optInt("pointCount") ?: 0)
-            }.sortedByDescending { it.runId }
+                val variants=listOf(
+                    Triple("sparse_two_view.ply","Full scene","sparse_report.json"),
+                    Triple("sparse_object_focus.ply","Object focus","object_focus_report.json"))
+                variants.mapNotNull { (name,label,reportName) ->
+                    val file=File(folder,name)
+                    if(!file.isFile) return@mapNotNull null
+                    val meta=runCatching { JSONObject(File(folder,reportName).readText()) }.getOrNull()
+                    val count=if(label=="Full scene") meta?.optInt("pointCount") ?: 0
+                        else meta?.optInt("objectCandidatePoints") ?: 0
+                    SavedPlyEntry(folder.name,source+" / "+label,file,count)
+                }
+            }.sortedWith(compareByDescending<SavedPlyEntry> { it.runId }.thenBy { it.sourceKind })
 
     fun completedRunCount(): Int = root.listFiles()?.count {
         it.isDirectory && File(it, "result.json").isFile()
@@ -62,7 +67,9 @@ class ScanRepository(private val context: Context) {
             "test_results.json", "test_report.txt",
             "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
             "sparse_report.json", "sparse_last_failure.json",
-            "third_view_report.json", "third_view_last_failure.json")
+            "third_view_report.json", "third_view_last_failure.json",
+            "sparse_point_projections.json", "object_focus_report.json",
+            "object_focus_selection.json", "object_focus_last_failure.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -183,7 +190,9 @@ class ScanRepository(private val context: Context) {
         val names = listOf("manifest.json", "result.json", "events.jsonl", "test_results.json", "test_report.txt",
             "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json",
             "sparse_report.json", "sparse_last_failure.json",
-            "third_view_report.json", "third_view_last_failure.json")
+            "third_view_report.json", "third_view_last_failure.json",
+            "sparse_point_projections.json", "object_focus_report.json",
+            "object_focus_selection.json", "object_focus_last_failure.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)
