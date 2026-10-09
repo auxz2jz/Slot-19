@@ -1,4 +1,4 @@
-# Android Video 3D Capture Lab — v0.4.0 ORB Geometry CANDIDATE (v0.3.0 capture verified)
+# Android Video 3D Capture Lab — v0.5.0 two-view sparse CANDIDATE (v0.4.0 capture/ORB verified)
 
 Native Kotlin/Compose camera capture application in `auxz2jz/Slot-19/android/`. Windows program separately owned; read `../windows/OWNERSHIP.md` and `../shared/`. This Android app is a **frame/photo capture research tool**: it does **not** yet compute camera poses, point clouds, meshes, textures, or laser geometry.
 
@@ -72,3 +72,21 @@ See `ORB_GEOMETRY_PLAN.md`, `CHECKPOINT.md` and `DIAGNOSTICS_AND_TESTING.md` for
 - Universal fallback: `Video3DCapture-Android-v0.4.0-UNIVERSAL-CANDIDATE.apk`, 153,240,179 bytes, SHA256 `156d697bdfb1a8f8eac5ee1e061f4dead356f8a5bb861d5386482077d3fce327`.
 - CI SUCCESS: https://github.com/auxz2jz/Slot-19/actions/runs/37906142981 — artifact `video3d-android-v0.4.0-candidate`, ID `11603669766`. Exact built source `36323ccbda8d6dbf7efce929c14ae909233cee33`, saved `backup/android-v0.4.0-arm64-ci-candidate`.
 - Both artifact ZIP and generated `SHA256SUMS.txt` passed verification. Device OpenCV-native functionality remains **USER TEST PENDING**; verified v0.3.0 capture version preserved.
+
+## v0.5.0 — First experimental two-view sparse 3D point cloud
+
+The user's last physical verification covered Android v0.4.0 capture and ORB feature analysis. Exact protected source `36323ccbda8d6dbf7efce929c14ae909233cee33` at `backup/android-v0.4.0-user-verified-orb`. This does not verify 3D reconstruction.
+
+V0.5.0 keeps **all three original capture modes**, sample-rate controls, and **Analyze Latest Run — ORB Geometry** unchanged. The fourth opt-in step, **Analyze Sparse 3D — Two Views**, tries a small number of pairs from the latest completed run. It uses real feature matching, essential-matrix RANSAC, relative pose recovery, two-view triangulation, cheirality and reprojection/parallax rejection to create a tiny colored sparse PLY when enough evidence is available. It can correctly respond **INCONCLUSIVE** with no PLY when views have inadequate parallax, features or consistency.
+
+**Accuracy limitations: camera calibration is estimated rather than measured, lens distortion is ignored, translation scale is unknown, only ONE pair reconstructed, background may dominate, and the result is not a full 3D scan or textured mesh.** Do not use coordinates as actual dimensions.
+
+### Device test guide
+1. Verify the pre-existing Live, Video and Smart capture modes still work; capture a well-lit detailed stationary object while moving your phone around it.
+2. Optionally tap the old ORB analysis first (real 2D feature correspondence evidence). Tap **Analyze Sparse 3D — Two Views** after a valid run with 10–30+ photos. Wait for the result.
+3. On success, tap **Export Sparse PLY — Experimental** and pick a destination through Android's document picker. Open the PLY in any point-cloud viewer; assess whether the rough shape seems plausible, knowing orientation/size will be arbitrary. No PLY is enabled for an INCONCLUSIVE analysis.
+4. Tap **Export Test + Diagnostics** or **Export ALL Runs + FPS Comparison**. New `sparse_report.json` (and optional `sparse_last_failure.json`) is included; private images and PLY bytes are excluded from the redacted ZIP by default.
+5. Try an almost stationary view or featureless subject; a high ORB matching score alone does not imply real 3D baseline. Share diagnostics and any description/screenshots of an exported PLY, including whether it is clearly unrelated to the object.
+6. Do not declare v0.5 VERIFIED until you personally test it. If installation requires uninstalling an earlier GitHub debug-signed APK, **export all run diagnostics and desired app data before uninstall**, which may erase app-private captures.
+
+**Source/testing:** read `SPARSE_TWO_VIEW_PLAN.md`, `CHECKPOINT.md` and `DIAGNOSTICS_AND_TESTING.md`. GitHub Actions run `37910662990` tests v0.5 Android JVM source and builds ARM64/universal APKs; check results before assuming they exist.
