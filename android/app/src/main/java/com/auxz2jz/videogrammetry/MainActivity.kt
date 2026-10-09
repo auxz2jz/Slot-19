@@ -724,14 +724,30 @@ class CaptureCoordinator(private val activity: MainActivity) {
                             " candidate view pairs"
                     }
                 }
+                val early = if(result.optString("status")=="SPARSE_CANDIDATE" &&
+                    File(run.directory,"early_object_focus_selection.json").isFile()) {
+                    runCatching {
+                        ui { sparseMessage="Detecting object-priority ORB features inside your two selected boxes..." }
+                        SparseTwoViewAnalyzer().analyzeEarlySelectedObject(run)
+                    }.onFailure { error ->
+                        run.event("ERROR","EARLY_OBJECT_RECONSTRUCTION",
+                            JSONObject().put("errorType",error.javaClass.simpleName))
+                    }.getOrNull()
+                } else null
                 ui {
                     val success = result.optString("status") == "SPARSE_CANDIDATE"
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
-                    objectFocusAvailable = false
-                    objectFocusMessage = if(success)
-                        "Ready to select the object in both saved photos"
+                    objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+                    objectFocusMessage = if(early!=null)
+                        early.optString("status") + ": " +
+                        early.optInt("objectCandidatePoints") +
+                        " independently reconstructed ROI points; different relative coordinate frame from full scene."
+                        else if (earlyObjectSelected)
+                            "Object-priority reconstruction inconclusive or failed. Full-scene PLY remains available. Export diagnostics."
+                        else if(success)
+                            "Optional: select object in both photos after reconstruction"
                         else "No sparse points available for object focus"
                     sparseMessage = if (success)
                         "Experimental cloud: " + result.optInt("pointCount") +
