@@ -871,7 +871,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
         try {
             val result=ObjectFocusProcessor().saveBeforeSparse(run,first,second)
             earlyObjectSelected=true
-            objectFocusMessage="Object selected in both photos BEFORE 3D. Tap Analyze Sparse 3D to build full-scene and independent object-priority clouds."
+            reconstructedAvailable=false
+            multiviewAvailable=false
+            savedClouds=repository.savedPlyEntries()
+            objectFocusMessage="Object marked in both photos BEFORE 3D. Tap Analyze Sparse 3D for a new ROI-first model, then run registered multi-view."
             status="Early object boxes saved for frames "+
                 result.getJSONArray("sourcePair").getInt(0)+" and "+
                 result.getJSONArray("sourcePair").getInt(1)
