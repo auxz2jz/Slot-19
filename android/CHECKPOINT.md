@@ -12,7 +12,7 @@ User explicitly confirmed 2026-10-09: “Yes everything looked fine let's go ahe
 - **Older good versions:** v0.2.0 `backup/android-v0.2.0-user-verified-capture`; v0.1.0 own branch.
 
 ## LATEST CANDIDATE — v0.4.0 (UNVERIFIED)
-- Android-only PR #2 merged to main at **`4503a4cf9c40a8709fd13b009a766901545aff40`**. GitHub Actions run **`37905706664`** queued/in progress; DO NOT claim SUCCESS until checked.
+- Android-only PR #2 merged to main at **`4503a4cf9c40a8709fd13b009a766901545aff40`**. GitHub Actions run **`37905706664` SUCCESS** (first universal OpenCV build). ARM64 optimized variant built separately in **`37906142981` SUCCESS**.
 - New dependency `org.opencv:opencv:4.12.0` (official Android AAR, Apache 2.0). New opt-in **Analyze Latest Run — ORB Geometry** after any completed capture.
 - `OrbGeometryAnalyzer.kt`: downsampled (max 640 pixel edge) actual saved frame JPEGs -> ORB keypoints/descriptors (~800) -> BFMatcher/Hamming 0.75 ratio -> fundamental-matrix RANSAC (1.5px at resized scale, confidence 0.99), count inliers and per-pair verdict.
 - `GeometryPolicy.kt` and JVM `GeometryPolicyTest.kt`: strict support thresholds (>=12 ratio matches/inliers, >=30% matched RANSAC inliers) and max 80 sampled pair comparisons with full first/last coverage. Every pair report includes keypoint/match/inlier counts. The ORB feature matcher is REAL; it does NOT measure true object-only overlap, recover metric camera position, solve bundle adjustment, or generate a point cloud/mesh.
@@ -29,9 +29,21 @@ User explicitly confirmed 2026-10-09: “Yes everything looked fine let's go ahe
 - APK debug signing keys may differ. Before uninstalling a previously installed version, export diagnostics and any app-private data needed; uninstall may remove capture runs.
 
 ## Required next action
-1. Check GitHub Actions run `37905706664` for compile/JVM tests and APK. On failure, diagnose FIRST ACTUAL compiler/dependency error and patch ONLY Android-owned source. Stop repeated failed approaches per Master Library.
-2. If successful, record exact source SHA, artifact ID, APK SHA256 and backup source branch. Verify unchanged Windows file blob SHAs.
-3. User installs v0.4.0; test all three capture modes still work, then ORB analysis on saved frames; run a textured object and a near-identical/featureless set, inspect status and report, export ALL Runs ZIP.
+1. DONE: GitHub Actions runs `37905706664` and `37906142981` completed SUCCESS (Android Kotlin compile, pure-JVM tests, APK assembly, artifact upload and checksums).
+2. DONE: exact source, artifacts and hashes recorded below. Verified historical Windows source/tests/checkpoint blob hashes unchanged.
+3. NEXT: User installs v0.4.0 ARM64, confirms prior three capture modes, then ORB analyzes a textured object and compares a featureless or static set; inspect output and export latest / ALL Runs ZIP.
 4. Only after explicit user visual and function confirmation mark v0.4 as verified. Preserve 0.3 backup; then choose geometry-aware capture tuning, camera pose/intrinsic calibration and eventual triangulation.
 
 See `android/ORB_GEOMETRY_PLAN.md`, `android/PROJECT_MEMORY.md`, `android/ROADMAP.md` and `android/DIAGNOSTICS_AND_TESTING.md`; observe global `AGENTS.md` and canonical `auxz2jz/master-instruction-library`.
+
+## Verified CI / downloadable v0.4.0 APK identities — 2026-10-09
+
+- **Latest source tested**: `36323ccbda8d6dbf7efce929c14ae909233cee33` (Android PR #3 ABI split, PR #2 ORB implementation already merged). **Backup branch `backup/android-v0.4.0-arm64-ci-candidate`** points to this exact source.
+- **Final GitHub Actions**: `37906142981` COMPLETED SUCCESS, including `testDebugUnitTest`, `assembleDebug`, SHA256 checks, and APK artifact upload.
+- **Artifact:** `video3d-android-v0.4.0-candidate`, ID `11603669766`, GitHub run https://github.com/auxz2jz/Slot-19/actions/runs/37906142981
+- **ARM64 user-phone APK:** `Video3DCapture-Android-v0.4.0-ARM64-CANDIDATE.apk`, 36,404,569 bytes, SHA256 `7f9aca331b78f56595f799971106c2e23a09b212f0ece565846fd40d3ebfb1cd`. Intended for ARM64 Android phones such as Galaxy S22 Ultra.
+- **Universal fallback APK:** `Video3DCapture-Android-v0.4.0-UNIVERSAL-CANDIDATE.apk`, 153,240,179 bytes, SHA256 `156d697bdfb1a8f8eac5ee1e061f4dead356f8a5bb861d5386482077d3fce327`. Both downloaded from GitHub Actions, outer ZIP passed integrity check, both hashes passed `SHA256SUMS.txt`.
+- Earlier *full universal only* v0.4 compile at `4503a4cf9c40a8709fd13b009a766901545aff40` also passed GitHub Actions `37905706664`. Original source preserved `backup/android-v0.4.0-orb-ci-candidate`, APK SHA256 `e880fbc1f0fbd5e6ecb90aa653adc71d49034f58e2fcbeb448e694af1df009ab`. Superseded by ABI-specific build, not a verified baseline.
+- **No Android v0.4.0 real-device OpenCV output verified yet**. The official library being compiled/packaged does not prove ORB matching or native initialization succeeds on a specific phone.
+- **Still last user-verified Android capture baseline:** v0.3.0 at `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262`; backup `backup/android-v0.3.0-user-verified-capture`. No Windows source/checkpoint changes.
+- Next: user tests photo capture and "Analyze Latest Run — ORB Geometry", exports latest or full ZIP, reports accepted/rejected geometric pairs and any native loading/error statuses. Do not promote v0.4 until explicit confirmation.
