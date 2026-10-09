@@ -121,7 +121,7 @@ class ScanRepository(private val context: Context) {
                         zip.closeEntry()
                         total += bytes.size
                     }
-                    entry("README.txt", ("Android Video 3D Capture Lab v0.2.0 diagnostics.\n" +
+                    entry("README.txt", ("Android Video 3D Capture Lab v0.3.0 diagnostics.\n" +
                         "No source video, camera image, filename or private URI included.\n").toByteArray())
                     names.forEach { name ->
                         val file = File(run.directory, name)
@@ -197,7 +197,7 @@ class ScanRun internal constructor(
             .put("sequenceNumber", ++sequence)
             .put("timestampUtcMs", System.currentTimeMillis())
             .put("monotonicTimeMs", SystemClock.elapsedRealtime() - startedMs)
-            .put("appVersion", "android-0.2.0")
+            .put("appVersion", "android-0.3.0")
             .put("sessionId", sessionId)
             .put("correlationId", id)
             .put("state", previousState)
@@ -330,10 +330,14 @@ class ScanRun internal constructor(
         if (brightness.isNotEmpty()) quality.put("meanBrightness", brightness.average())
         val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAtMs
         File(directory, "manifest.json").writeText(JSONObject()
-            .put("schemaVersion", 1).put("appVersion", "android-0.2.0")
+            .put("schemaVersion", 1).put("appVersion", "android-0.3.0")
             .put("runId", id).put("sourceKind", sourceKind)
-            .put("frameIntervalMs", if (sourceKind == "smart_auto") 0L else if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS
-                else FramePolicy.IMPORT_INTERVAL_MS)
+            .put("requestedFps", options?.targetFps)
+            .put("requestedMaxFrames", options?.maxFrames)
+            .put("measuredFps", measuredFps)
+            .put("qualitySummary", quality)
+            .put("frameIntervalMs", if (sourceKind == "smart_auto") 0L else options?.intervalMs
+                ?: if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS else FramePolicy.IMPORT_INTERVAL_MS)
             .put("samplingMethod", if (sourceKind == "smart_auto")
                 "heuristic_quality_and_view_change_no_pose" else "fixed_interval_not_quality_filtered")
             .put("sourceTimestampNote", "Requested sampling time; not verified geometric camera pose")
@@ -342,12 +346,20 @@ class ScanRun internal constructor(
         File(directory, "result.json").writeText(JSONObject()
             .put("runId", id).put("sourceKind", sourceKind)
             .put("frameCount", frameEntries.length()).put("status", status)
+            .put("requestedFps", options?.targetFps).put("requestedMaxFrames", options?.maxFrames)
+            .put("measuredFps", measuredFps)
+            .put("processingElapsedMs", processingElapsedMs)
+            .put("qualitySummary", quality)
             .put("outputValidated", verified).put("reason", reason.take(100)).toString(2))
         event("OUTPUT_VALIDATION", "VALIDATE_FRAMES", JSONObject()
-            .put("frameCount", frameEntries.length()).put("valid", verified))
+            .put("frameCount", frameEntries.length()).put("valid", verified)
+            .put("requestedFps", options?.targetFps).put("measuredFps", measuredFps)
+            .put("processingElapsedMs", processingElapsedMs)
+            .put("qualitySummary", quality))
         previousState = status
         event("OPERATION_RESULT", "CAPTURE_FINISHED", JSONObject()
-            .put("success", success).put("status", status).put("frameCount", frameEntries.length()))
+            .put("success", success).put("status", status).put("frameCount", frameEntries.length())
+            .put("requestedFps", options?.targetFps).put("measuredFps", measuredFps))
         return success
     }
 
@@ -386,7 +398,7 @@ class ScanRun internal constructor(
         val passed = objective && looksCorrect
         val testStatus = if (passed) "PASS" else "FAIL"
         File(directory, "test_results.json").writeText(JSONObject()
-            .put("testId", "android_v0.1.0_capture")
+            .put("testId", "android_v0.3.0_capture")
             .put("testSessionId", UUID.randomUUID().toString())
             .put("runId", id).put("objectiveOutputValid", objective)
             .put("visualResultSource", if (looksCorrect) "MANUAL_PASS" else "MANUAL_FAIL")
@@ -394,7 +406,7 @@ class ScanRun internal constructor(
             .put("note", "A PASS does not establish user-verified baseline without user confirmation.")
             .toString(2))
         File(directory, "test_report.txt").writeText(
-            "Android v0.1.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
+            "Android v0.3.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
             "Output files/hashes validated: $objective\nVisual confirmation: $looksCorrect\n" +
             "Test: $testStatus\n")
         event("TEST_VERIFICATION", "VALIDATE_CAPTURE", JSONObject()
