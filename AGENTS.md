@@ -1,5 +1,13 @@
 # Instructions for all agents working in this repository
 
+## Current platform ownership — 2026-10-08
+- Android is now active. **Android worker owns only `android/` and `.github/workflows/android-build.yml`.** Android checkpoint, baseline, roadmap, diagnostics, source and APKs are owned there.
+- Windows/Codex owns the historical root implementation: `videogrammetry/`, `tests/`, `pyproject.toml`, `.github/workflows/tests.yml`, and the original root Windows checkpoint/memory/roadmap/testing records. Preserve their names/locations.
+- Read `windows/OWNERSHIP.md` and `shared/SHARED_DECISIONS.md` before operating in a platform area. Shared product specifications live in `shared/`; check latest versions before editing shared files.
+- Backup of pre-Android Windows state: branch `backup/pre-android-windows-v0.1.0` at `aaec898cf2fadf95760aaedc436d0f7062bd7fbe`. Its v0.1.0 Python candidate is user-UNVERIFIED.
+- An Android CI compile, APK artifact or user test never verifies the Windows implementation, and vice versa.
+
+
 **Mandatory governing instruction library:** `auxz2jz/master-instruction-library`, GitHub default branch `main`.
 
 Read **`INSTRUCTION_INDEX.md` first**, then all applicable mandatory files: `CORE_DEVELOPMENT_RECOVERY_RULES.md`, `DIAGNOSTICS_STANDARD.md`, `GUIDED_TESTING_STANDARD.md`, `CODEX_USAGE_EFFICIENCY_STANDARD.md` (for coding agents), and `CROSS_PLATFORM_COLLABORATION_STANDARD.md` before introducing a second platform implementation.
