@@ -36,3 +36,21 @@
 - [ ] Live laser scanning after still mode verified; hybrid fusion only after both geometry sources trustworthy.
 
 Each Android baseline, build, test, and checkpoint remains platform-specific. No Android milestone can advance Windows statuses.
+
+## New milestone v0.2.0 — Smart Auto Capture (experimental APK built)
+
+- [x] **v0.1.0 last user-verified capture baseline:** live run (30 frames, manual visual PASS), imported video (40 frames, user said final image looked correct); preserve source in `backup/android-v0.1.0-user-verified-capture`.
+- [x] Third distinct control **Start Smart Auto Capture / Stop Smart Auto Capture**, retaining original live/video capture methods.
+- [x] Lightweight thumbnail-based sharpness/exposure/stability/view-change heuristics; status guidance and approximate progress bar. This is NOT tracked rotation, actual spatial overlap, or percent completion of the scan.
+- [x] Optional CameraX ImageCapture full-res JPEG output, one photo in flight, max 30 photos, record validated JPEG dimensions/bytes/hash and each selected photo's scores.
+- [x] Display saved frames progressively (every few frames) during recorded-video import.
+- [x] Add pure-JVM tests for selector acceptance/rejection, motion, repeated views, cooldown and brightness compensation. GitHub Actions `37894898716` built APK and ran unit tests successfully.
+- [x] Preserve exact v0.2.0 candidate source in `backup/android-v0.2.0-smart-ci-candidate`, SHA256 of APK recorded in `CHECKPOINT.md`.
+- [ ] Physically verify smart CameraX ImageCapture can bind alongside existing preview and analysis on Samsung Galaxy S22 Ultra, without regressing either v0.1.0 mode.
+- [ ] Test near-identical static view rejection, move + hold auto shutter, poor-light and motion warnings, saved full-res photo dimensions/orientation and readable diagnostics.
+- [ ] Compare smart selected views versus standard fixed-interval capture on an actual object; tune thresholds using the first returned diagnostic evidence.
+- [ ] User confirms v0.2.0, then and only then designate it the Android user-verified baseline.
+
+## Longer term panorama-style guidance
+- [ ] Investigate ORB/AKAZE/SIFT feature matching and geometric verification for meaningful camera/coverage estimates; real overlap cannot be inferred safely from simple brightness differences.
+- [ ] Only after actual reliable pose estimation consider directional or angular guide / scene coverage map. Avoid inventing metric movement or exact angle.
