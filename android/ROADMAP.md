@@ -92,7 +92,7 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] Save actual `featuresA/B`, `ratioTestMatches`, `fundamentalRansacInliers`, `inlierRatioOfMatches`, status and error details for every sampled neighboring pair.
 - [x] Integrate `geometry_report.json`, `geometry_pairs.jsonl`, `geometry_last_failure.json` into both latest-run ZIP and all-runs ZIP.
 - [x] Add JVM `GeometryPolicyTest.kt` validating sampling bounds and strict weak/consistent verdicts; GitHub run `37905706664` triggered for Android-only v0.4.0 candidate.
-- [ ] Confirm GitHub OpenCV AAR resolution, Kotlin compile/tests, APK hash and archive; fix only actual source errors and preserve artifact snapshot.
+- [x] Official OpenCV Android AAR resolved; Kotlin compile, JVM tests and APK assembly SUCCESS in GitHub Actions `37905706664` and ABI-optimized `37906142981`. ARM64 SHA256 `7f9aca331b78f56595f799971106c2e23a09b212f0ece565846fd40d3ebfb1cd`; universal `156d697bdfb1a8f8eac5ee1e061f4dead356f8a5bb861d5386482077d3fce327`. Snapshot `backup/android-v0.4.0-arm64-ci-candidate` source `36323ccbda8d6dbf7efce929c14ae909233cee33`.
 - [ ] User tests ORB on multiple neighboring photographs with texture, featureless/similar views, and exports geometry ZIP; confirm 3 capture modes remain fully functional.
 - [ ] Only user physical confirmation can upgrade v0.4.0 to VERIFIED.
 - [ ] Future true camera pose: intrinsics from calibration/metadata, robust multi-view correspondences and SfM with triangulation/BA; diagnose low-parallax, planar/background degeneracy.
