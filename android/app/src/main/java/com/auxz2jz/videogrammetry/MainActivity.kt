@@ -153,6 +153,13 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var sparseAvailable by mutableStateOf(
         currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
         private set
+    var objectFocusAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
+        private set
+    var objectFocusWorking by mutableStateOf(false)
+        private set
+    var objectFocusMessage by mutableStateOf("Object focus not selected yet")
+        private set
     var savedClouds by mutableStateOf(repository.savedPlyEntries())
         private set
     var viewerCloud by mutableStateOf<PointCloud?>(null)
@@ -598,6 +605,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         ui {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+            objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
             savedRuns = repository.completedRunCount()
@@ -672,6 +681,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
         sparseAnalyzing = true
         sparseAvailable = false
+        objectFocusAvailable = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -688,6 +698,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
+                    objectFocusAvailable = false
+                    objectFocusMessage = if(success)
+                        "Ready to select the object in both saved photos"
+                        else "No sparse points available for object focus"
                     sparseMessage = if (success)
                         "Experimental cloud: " + result.optInt("pointCount") +
                             " points from two views. Unknown scale; not a finished 3D model."
@@ -747,6 +761,63 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     status = thirdViewMessage
                 }
             } finally { ui { thirdViewAnalyzing=false } }
+        }
+    }
+
+    /** Real selected source pair photos, from saved sparse analysis. */
+    fun objectFocusSourcePhotos(): Pair<File,File>? {
+        if (objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            geometryAnalyzing || importing || liveSampling || smartSampling) {
+            objectFocusMessage="Finish the active capture or analysis first"
+            return null
+        }
+        val run=currentRun ?: return null
+        return try {
+            val photos=ObjectFocusProcessor().sourcePhotos(run)
+            run.event("USER_ACTION","OPEN_OBJECT_FOCUS_SELECTOR")
+            photos
+        } catch(ex:Exception) {
+            objectFocusMessage="Re-run Analyze Sparse 3D — Two Views on this capture " +
+                "to make image selection available ("+ex.javaClass.simpleName+")"
+            null
+        }
+    }
+
+    fun applyObjectFocus(first: FocusRect, second: FocusRect) {
+        val run=currentRun ?: return
+        if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
+            geometryAnalyzing || liveSampling || smartSampling || importing)return
+        objectFocusWorking=true
+        objectFocusMessage="Matching 3D points against both object rectangles..."
+        geometryWorker.execute {
+            try {
+                val report=ObjectFocusProcessor().apply(run,first,second)
+                ui {
+                    objectFocusAvailable=File(run.directory,"sparse_object_focus.ply").isFile()
+                    savedClouds=repository.savedPlyEntries()
+                    objectFocusMessage=report.optString("status") + ": " +
+                        report.optInt("objectCandidatePoints") + " kept; " +
+                        report.optInt("excludedScenePoints") + " excluded. " +
+                        "Original scene PLY unchanged."
+                    status="Object-focus report saved. Compare full-scene and focused clouds."
+                }
+            } catch(ex:Exception) {
+                ui { objectFocusMessage="Object focus failed: "+ex.javaClass.simpleName +
+                    ". Full-scene PLY remains unchanged; export diagnostics." }
+            } finally { ui { objectFocusWorking=false } }
+        }
+    }
+
+    fun exportObjectFocusPly(uri: Uri) {
+        val run=currentRun ?: return
+        if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing || importing)return
+        worker.execute {
+            try {
+                val count=repository.exportObjectFocusPly(run,uri)
+                ui { status="Object-focused PLY exported ("+count+" bytes)" }
+            } catch(ex:Exception) {
+                ui { status="Object-focused PLY export failed: "+ex.javaClass.simpleName }
+            }
         }
     }
 
@@ -932,6 +1003,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val plyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if (uri != null) coordinator.exportSparsePly(uri) }
+    val objectPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri != null) coordinator.exportObjectFocusPly(uri) }
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -941,6 +1015,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val preview = remember { PreviewView(context) }
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
+    var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     val latest = coordinator.latestRun
     val latestBitmap = remember(coordinator.previewFile) {
         if (coordinator.previewFile.isBlank()) null else {
@@ -1102,6 +1177,45 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Text("Object Focus — experimental", style=MaterialTheme.typography.titleMedium)
+                    Text("Draw the object rectangle in BOTH saved source photographs. " +
+                        "Points must match inside both rectangles; background features " +
+                        "can still contribute to camera pose. Not true segmentation.")
+                    Button(onClick={focusPhotos=coordinator.objectFocusSourcePhotos()},
+                        enabled=latest != null && latest.isClosed &&
+                            coordinator.sparseAvailable &&
+                            !coordinator.sparseAnalyzing && !coordinator.thirdViewAnalyzing &&
+                            !coordinator.geometryAnalyzing && !coordinator.objectFocusWorking &&
+                            !coordinator.importing && !coordinator.liveSampling &&
+                            !coordinator.smartSampling) {
+                        Text("Select Object in Two Photos")
+                    }
+                    if(coordinator.objectFocusWorking) LinearProgressIndicator(
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.objectFocusMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val focused=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id && it.file.name=="sparse_object_focus.ply"
+                        }
+                        if(focused!=null) {
+                            coordinator.openSavedCloud(focused)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.objectFocusAvailable &&
+                        !coordinator.objectFocusWorking) {
+                        Text("View Object-Focused Points — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let { run ->
+                            val name=ExportNames.objectFocusPly(BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("OBJECT_FOCUS_PLY",name)
+                            objectPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.objectFocusAvailable &&
+                        !coordinator.objectFocusWorking && !coordinator.sparseAnalyzing) {
+                        Text("Export Object-Focused PLY — Experimental")
+                    }
                     Button(onClick={ coordinator.validateThirdView() },
                         enabled=latest!=null && latest.isClosed &&
                             coordinator.sparseAvailable &&
@@ -1201,6 +1315,16 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             Text("Reconstruction: experimental two-view sparse points plus independent third-view pose check; no dense model.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+
+    focusPhotos?.let { photos ->
+        ObjectFocusDialog(
+            photos=photos,
+            onDismiss={focusPhotos=null},
+            onConfirm={first,second ->
+                focusPhotos=null
+                coordinator.applyObjectFocus(first,second)
+            })
     }
 
     if (showCloudViewer) SparseViewerDialog(

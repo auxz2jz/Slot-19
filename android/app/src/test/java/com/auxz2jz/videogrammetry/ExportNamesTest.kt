@@ -19,6 +19,11 @@ class ExportNamesTest {
         assertTrue(name.startsWith("Android-v0.7.0-"))
         assertTrue(name.endsWith("-19700101T000000005Z.ply"))
     }
+    @Test fun objectFocusExportIsDistinctAndVersioned() {
+        val name=ExportNames.objectFocusPly("0.8.0",run,0L)
+        assertEquals("Android-v0.8.0-object-focus-$run-19700101T000000000Z.ply",name)
+        assertNotEquals(name,ExportNames.sparsePly("0.8.0",run,0L))
+    }
     @Test fun repeatedExportsHaveDistinctNames() {
         assertNotEquals(ExportNames.allRunsZip("0.6.1",10L),
             ExportNames.allRunsZip("0.6.1",11L))

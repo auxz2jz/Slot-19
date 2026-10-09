@@ -23,6 +23,7 @@ import org.opencv.features2d.BFMatcher
 import org.opencv.features2d.ORB
 import org.opencv.imgproc.Imgproc
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.acos
 import kotlin.math.hypot
@@ -39,7 +40,10 @@ class SparseTwoViewAnalyzer {
         fun release() { desc.release(); colors.recycle() }
     }
     private data class Candidate(val report: JSONObject, val vertices: List<SparseVertex>,
-                                 val score: Double, val anchorTracks: Map<Int,SparseVertex> = emptyMap())
+                                 val score: Double, val anchorTracks: Map<Int,SparseVertex> = emptyMap(),
+                                 val projections: List<FocusProjection> = emptyList(),
+                                 val widthA: Int = 0, val heightA: Int = 0,
+                                 val widthB: Int = 0, val heightB: Int = 0)
     private fun checkedFile(run: ScanRun, manifest: JSONArray, index: Int): File {
         val name = manifest.getJSONObject(index).getString("name")
         require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) { "Unsafe image name" }
@@ -184,6 +188,7 @@ class SparseTwoViewAnalyzer {
                 Calib3d.triangulatePoints(P1,P2,in1,in2,X)
                 val points=ArrayList<SparseVertex>()
                 val tracks=HashMap<Int,SparseVertex>()
+                val projections=ArrayList<FocusProjection>()
                 val allAngles=ArrayList<Double>()
                 val allErrors=ArrayList<Double>()
                 for (i in acceptedIndices.indices) {
@@ -209,6 +214,9 @@ class SparseTwoViewAnalyzer {
                     val vertex=SparseVertex(x,y,z,Color.red(pix),Color.green(pix),Color.blue(pix))
                     points.add(vertex)
                     tracks[good[index].queryIdx]=vertex
+                    projections.add(FocusProjection(p1.x/a.colors.width.toDouble(),
+                        p1.y/a.colors.height.toDouble(),p2.x/b.colors.width.toDouble(),
+                        p2.y/b.colors.height.toDouble()))
                     allAngles.add(angle); allErrors.add(err)
                 }
                 val medianAngle=median(allAngles)
@@ -221,7 +229,9 @@ class SparseTwoViewAnalyzer {
                 val valid=verdict=="TWO_VIEW_SPARSE_CANDIDATE"
                 val score=if(valid) points.size * min(medianAngle,8.0)/8.0 else 0.0
                 return Candidate(report,if(valid)points else emptyList(),score,
-                    if(valid)tracks else emptyMap())
+                    if(valid)tracks else emptyMap(),
+                    if(valid)projections else emptyList(),
+                    a.colors.width,a.colors.height,b.colors.width,b.colors.height)
             } finally {
                 in1.release();in2.release();P1.release();P2.release();X.release()
             }
@@ -455,6 +465,33 @@ class SparseTwoViewAnalyzer {
                 temp.writeText(ply)
                 check(temp.length()>150) { "Candidate PLY empty" }
                 check(temp.renameTo(existingCloud)) { "Cannot finalize candidate PLY" }
+                check(winner.projections.size==winner.vertices.size) {
+                    "Projected vertex list does not match PLY"
+                }
+                val coordinates=JSONArray()
+                for((i,projection) in winner.projections.withIndex()) {
+                    coordinates.put(JSONObject().put("pointIndex",i)
+                        .put("firstX",projection.firstX).put("firstY",projection.firstY)
+                        .put("secondX",projection.secondX).put("secondY",projection.secondY))
+                }
+                val fingerprint=MessageDigest.getInstance("SHA-256")
+                    .digest(ply.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it.toInt() and 255) }
+                val projectionJson=JSONObject().put("schemaVersion",1)
+                    .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+                    .put("runId",run.id).put("analysisId",id)
+                    .put("sourcePair",JSONArray().put(0).put(winner.report.getInt("indexB")))
+                    .put("widthA",winner.widthA).put("heightA",winner.heightA)
+                    .put("widthB",winner.widthB).put("heightB",winner.heightB)
+                    .put("pointCount",winner.vertices.size).put("plySha256",fingerprint)
+                    .put("projections",coordinates)
+                val projectionTmp=File(run.directory,"sparse_point_projections.json.tmp")
+                projectionTmp.writeText(projectionJson.toString(2))
+                check(projectionTmp.renameTo(File(run.directory,"sparse_point_projections.json")))
+                for(name in listOf("sparse_object_focus.ply","object_focus_report.json",
+                    "object_focus_selection.json","object_focus_last_failure.json"))
+                    File(run.directory,name).delete()
+                report.put("objectFocusProjectionMapAvailable",true)
                 report.put("selectedPair",winner.report)
                     .put("pointCount",winner.vertices.size)
                     .put("status","SPARSE_CANDIDATE")
@@ -462,6 +499,9 @@ class SparseTwoViewAnalyzer {
             } else {
                 // Avoid re-exporting stale PLY from a previous attempt.
                 existingCloud.delete()
+                for(name in listOf("sparse_point_projections.json","sparse_object_focus.ply",
+                    "object_focus_report.json","object_focus_selection.json"))
+                    File(run.directory,name).delete()
                 report.put("status","INCONCLUSIVE")
                     .put("pointCount",0)
                     .put("warning","No pair met parallax/inlier/reprojection gates. This is not a capture failure.")
