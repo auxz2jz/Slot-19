@@ -1513,7 +1513,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "even if there are no completed runs. Check camera preview returns afterward. " +
             "12. Turn phone sideways during video processing or calibration; check operation continues " +
             "rather than resetting. " +
-            "13. If calibration stops the app, reopen and look for interrupted-calibration message. " + +
+            "13. If calibration stops the app, reopen and look for interrupted-calibration message. " +
             "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
             "or switch to Move to pan a zoomed image. Tap Next Photo. " +
             "Draw the same object in Photo 2 and tap Create Object PLY. " +
