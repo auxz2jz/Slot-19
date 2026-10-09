@@ -102,3 +102,25 @@ The user verified all three Android capture modes, settings and OpenCV ORB geome
 **What to test:** Preserve any data needed from older version first; different GitHub debug certificate may require uninstall, which can erase app-private runs. On the phone, capture a well-lit detailed stationary object with camera moving around it using one of the three existing methods. Confirm former ORB function still works. Then tap **Analyze Sparse 3D — Two Views**. A successful pair with adequate triangulation saves **an experimental sparse point cloud**, available via **Export Sparse PLY — Experimental**. Open the PLY in a PLY-capable 3D point viewer to inspect point shape, and upload ZIP from Export Test + Diagnostics or Export ALL Runs for the matched pair/inlier/parallax/reprojection evidence. If it reports INCONCLUSIVE, export ZIP anyway. Repeat on low-texture/nearly stationary images to evaluate false-positive behavior.
 
 **CRITICAL:** one selected pair only, rough estimated camera intrinsics (not calibrated), scale arbitrary, background features possible, no real-world measurements, no dense/full-model reconstruction, no mesh, no texture map or globally optimized multi-view poses. An apparent PLY is not proof of an accurate model. **v0.5.0 is a CANDIDATE until physically user-verified.** See `SPARSE_TWO_VIEW_PLAN.md` and `CHECKPOINT.md`.
+
+
+## v0.6.0 phone build — view PLY directly + optional chessboard photos
+
+**Available now, user physical test pending.** Source `837ff21901b4d88cb6cab40d934270cf7b8ab330`, protected `backup/android-v0.6.0-viewer-calibration-ci-candidate`. GitHub Android Actions run [37914986139](https://github.com/auxz2jz/Slot-19/actions/runs/37914986139) passed unit tests/Android compile and uploaded artifact `video3d-android-v0.6.0-candidate`, ID `11609631676`.
+
+- **Recommended ARM64 APK** `Video3DCapture-Android-v0.6.0-ARM64-CANDIDATE.apk` (36,470,105 bytes), SHA256 `5ffc06933091b4a6a648970ee756ed3b92677c965f6f5c3fa1eafe8143ed9689`.
+- **Universal APK** `Video3DCapture-Android-v0.6.0-UNIVERSAL-CANDIDATE.apk` (153,305,715 bytes), SHA256 `718bb8f67d9552f979bb51234f6c6032cf22bb8e962c8d2a4ee99c734e582850`. Artifact ZIP integrity and both hashes verified against `SHA256SUMS.txt`.
+
+### View your existing sparse PLY point clouds
+1. If old app data is retained, tap **View Sparse Points — 3D** after capturing or processing. Tap **Saved scans** to choose from previous app-private runs. If the prior APK had to be uninstalled and its private files disappeared, tap **Open a PLY File to View** to import a previously exported ASCII PLY from phone storage.
+2. In the native viewer, drag to rotate, pinch to zoom, change point size, toggle Point Colors / Monochrome, hide large spatial outliers using Focus Cluster, and Reset View. This is offline; no 3D renderer or external viewer is needed.
+3. The displayed points are from one experimental two-view reconstruction with unknown real-world scale. A point cluster is not a watertight mesh or proven accurate object model.
+
+### Calibrate with your own black-and-white grid
+1. Make sure your US Letter print is at 100% **Actual Size**. Your physical target has **9 × 6 INNER corners**, not 9 × 6 squares, **10 × 7 total squares**, each **25.0 mm**, outer pattern **250 × 175 mm**, with the 250 mm dimension along the page's 11-inch side. Measure a printed square with a ruler before trusting the 25.0 mm number.
+2. Using the same rear camera/lens/zoom you intend to scan with, take **12–20 sharp photos** of the board. Keep its 54 inner corners visible, vary viewing angles/positions/distances, use even light and avoid glare, motion blur or digital zoom. The backing paper being white is fine; the important black-white internal corners should have clear contrast.
+3. Tap **Calibrate Using Checkerboard Photos** and choose the pictures with Android's multiple-image picker. This runs OpenCV checkerboard recognition and calibration locally, then displays how many photos were accepted and the reprojection RMS error.
+4. The redacted results are saved in `camera_calibration/last_attempt.json` (and `last_checkerboard.json` for plausible candidate) and included in **Export ALL Runs + FPS Comparison** diagnostics. No camera images are exported in that ZIP.
+5. **Calibration is not automatically applied to v0.5 sparse reconstruction.** Camera sensor crop, aspect ratio, lens, zoom and source video may not match the calibration photos. Measure and validate compatibility before using K/distortion in future geometric reconstruction.
+
+The last *fully* user-verified Android capture/ORB baseline is v0.4.0; v0.5.0 had device-confirmed sparse PLY generation but 3D shape could not be viewed. v0.6.0 is a build-tested **CANDIDATE** until the user verifies the viewer, legacy modes and optional calibration on their phone. Keep your previously exported PLYs and diagnostic ZIPs before uninstalling a differently signed debug APK; uninstall may erase private captured runs. See `CHECKPOINT.md` and `POINT_VIEWER_CHECKERBOARD_PLAN.md` for handoff.
