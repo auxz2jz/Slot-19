@@ -90,3 +90,15 @@ V0.5.0 keeps **all three original capture modes**, sample-rate controls, and **A
 6. Do not declare v0.5 VERIFIED until you personally test it. If installation requires uninstalling an earlier GitHub debug-signed APK, **export all run diagnostics and desired app data before uninstall**, which may erase app-private captures.
 
 **Source/testing:** read `SPARSE_TWO_VIEW_PLAN.md`, `CHECKPOINT.md` and `DIAGNOSTICS_AND_TESTING.md`. GitHub Actions run `37910662990` tests v0.5 Android JVM source and builds ARM64/universal APKs; check results before assuming they exist.
+
+## Experimental v0.5.0 sparse PLY — source, APK and device test instructions
+
+The user verified all three Android capture modes, settings and OpenCV ORB geometric-pair analysis in **v0.4.0**, including nine successful capture sessions and eight completed ORB reports. This is the **last user-verified Android baseline**, exact protected source `36323ccbda8d6dbf7efce929c14ae909233cee33` at `backup/android-v0.4.0-user-verified-orb`, ARM64 APK SHA256 `7f9aca331b78f56595f799971106c2e23a09b212f0ece565846fd40d3ebfb1cd`. Windows never changed.
+
+**NEW v0.5.0 experimental Android source:** `4538e52379eadcee400de9b40748144ebee9a42f`, protected branch `backup/android-v0.5.0-two-view-ci-candidate`. GitHub Actions build `37910662990` SUCCESS: https://github.com/auxz2jz/Slot-19/actions/runs/37910662990 ; artifact `video3d-android-v0.5.0-candidate`, ID `11606766326`.
+- ARM64 APK: `Video3DCapture-Android-v0.5.0-ARM64-CANDIDATE.apk`, 36,437,337 bytes, SHA256 `fbc26f5493e823703af40cd9a6f1be8b57d7f7537bb04554903b2f69aba083d9`.
+- Universal APK: `Video3DCapture-Android-v0.5.0-UNIVERSAL-CANDIDATE.apk`, 153,272,947 bytes, SHA256 `bba3d23425edcc7f6cbd91b6298bdc69ba9c3e5a79891d5521c4493d1f0127cd`. Both checksums matched embedded SHA256SUMS.txt, downloaded archive integrity PASS.
+
+**What to test:** Preserve any data needed from older version first; different GitHub debug certificate may require uninstall, which can erase app-private runs. On the phone, capture a well-lit detailed stationary object with camera moving around it using one of the three existing methods. Confirm former ORB function still works. Then tap **Analyze Sparse 3D — Two Views**. A successful pair with adequate triangulation saves **an experimental sparse point cloud**, available via **Export Sparse PLY — Experimental**. Open the PLY in a PLY-capable 3D point viewer to inspect point shape, and upload ZIP from Export Test + Diagnostics or Export ALL Runs for the matched pair/inlier/parallax/reprojection evidence. If it reports INCONCLUSIVE, export ZIP anyway. Repeat on low-texture/nearly stationary images to evaluate false-positive behavior.
+
+**CRITICAL:** one selected pair only, rough estimated camera intrinsics (not calibrated), scale arbitrary, background features possible, no real-world measurements, no dense/full-model reconstruction, no mesh, no texture map or globally optimized multi-view poses. An apparent PLY is not proof of an accurate model. **v0.5.0 is a CANDIDATE until physically user-verified.** See `SPARSE_TWO_VIEW_PLAN.md` and `CHECKPOINT.md`.
