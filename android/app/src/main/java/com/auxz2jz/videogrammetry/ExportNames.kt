@@ -37,6 +37,11 @@ object ExportNames {
         "Android-" + normalizedVersion(versionName) + "-object-focus-" +
             checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
 
+    fun filteredScenePly(versionName: String, runId: String,
+        timeUtcMs: Long = System.currentTimeMillis()): String =
+        "Android-" + normalizedVersion(versionName) + "-filtered-scene-" +
+            checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
+
     fun reconstructedPly(versionName: String, runId: String,
         timeUtcMs: Long = System.currentTimeMillis()): String =
         "Android-" + normalizedVersion(versionName) + "-object-reconstruction-" +
