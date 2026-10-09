@@ -23,6 +23,7 @@ import org.opencv.features2d.BFMatcher
 import org.opencv.features2d.ORB
 import org.opencv.imgproc.Imgproc
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.acos
 import kotlin.math.hypot
@@ -39,7 +40,10 @@ class SparseTwoViewAnalyzer {
         fun release() { desc.release(); colors.recycle() }
     }
     private data class Candidate(val report: JSONObject, val vertices: List<SparseVertex>,
-                                 val score: Double, val anchorTracks: Map<Int,SparseVertex> = emptyMap())
+                                 val score: Double, val anchorTracks: Map<Int,SparseVertex> = emptyMap(),
+                                 val projections: List<FocusProjection> = emptyList(),
+                                 val widthA: Int = 0, val heightA: Int = 0,
+                                 val widthB: Int = 0, val heightB: Int = 0)
     private fun checkedFile(run: ScanRun, manifest: JSONArray, index: Int): File {
         val name = manifest.getJSONObject(index).getString("name")
         require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) { "Unsafe image name" }
@@ -184,6 +188,7 @@ class SparseTwoViewAnalyzer {
                 Calib3d.triangulatePoints(P1,P2,in1,in2,X)
                 val points=ArrayList<SparseVertex>()
                 val tracks=HashMap<Int,SparseVertex>()
+                val projections=ArrayList<FocusProjection>()
                 val allAngles=ArrayList<Double>()
                 val allErrors=ArrayList<Double>()
                 for (i in acceptedIndices.indices) {
@@ -209,6 +214,9 @@ class SparseTwoViewAnalyzer {
                     val vertex=SparseVertex(x,y,z,Color.red(pix),Color.green(pix),Color.blue(pix))
                     points.add(vertex)
                     tracks[good[index].queryIdx]=vertex
+                    projections.add(FocusProjection(p1.x/a.colors.width.toDouble(),
+                        p1.y/a.colors.height.toDouble(),p2.x/b.colors.width.toDouble(),
+                        p2.y/b.colors.height.toDouble()))
                     allAngles.add(angle); allErrors.add(err)
                 }
                 val medianAngle=median(allAngles)
@@ -221,7 +229,9 @@ class SparseTwoViewAnalyzer {
                 val valid=verdict=="TWO_VIEW_SPARSE_CANDIDATE"
                 val score=if(valid) points.size * min(medianAngle,8.0)/8.0 else 0.0
                 return Candidate(report,if(valid)points else emptyList(),score,
-                    if(valid)tracks else emptyMap())
+                    if(valid)tracks else emptyMap(),
+                    if(valid)projections else emptyList(),
+                    a.colors.width,a.colors.height,b.colors.width,b.colors.height)
             } finally {
                 in1.release();in2.release();P1.release();P2.release();X.release()
             }
