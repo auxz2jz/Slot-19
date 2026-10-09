@@ -67,3 +67,17 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] Future: analytical quality comparison using actual multi-view feature correspondence and camera registration; pixel-change heuristics alone cannot determine best reconstruction FPS.
 - [ ] Later: manage/archive/delete selected old run folders, with explicit confirmation, and optional output image/contact-sheet export; no implicit deletions.
 
+
+
+## v0.3.0 — real-device diagnostic evaluation
+
+- [x] Received single-run and all-run ZIPs; both structurally valid, demonstrating aggregate export includes **9 independent runs** and correct latest-run metadata.
+- [x] App reports **549 real saved JPEG file records**, all 9 capture runs with validated PASS and zero logged ERROR events. Three live, four video, two smart runs.
+- [x] Device exercised FPS settings across live 1/2, video 1/3/5, smart 0.5/1, including video frame cap 170 and live frame cap 50.
+- [x] Observed live measured rates ~0.98 and ~1.95; smart accepted rates ~0.44 and ~0.73 full-res photos/s.
+- [x] Captured video adjacent near-duplicate *appearance proxy* about 0%, 5.9% and 34.9% for 1/3/5 FPS respectively over common first 33.8 seconds; different run caps affect total temporal coverage.
+- [ ] **Request explicit v0.3 user visual confirmation** before upgrading last user-verified capture-only baseline. New ZIPs include no `test_results.json` manual verdict or actual JPEG pixel bytes.
+- [ ] Correct diagnostic semantics: video `measuredFps` currently derives from *requested* sample timestamps and can falsely appear like achieved device decoder FPS; add truthful source/sample-vs-wall-clock throughput and decoded timestamp provenance if supported.
+- [ ] Add more reliable per-frame image similarity/blur evaluation and cross-run source fingerprinting. Keep the simple pixel proxy separate from verified SfM overlap/pose.
+- [ ] Consider storage management with explicit confirmation; 30 smart 12MP JPEGs occupied ~93–109MB in tests and 300 could be near 1GB.
+- [ ] After v0.3 verification, start feature matching/registration evaluation on stationary-object handheld motion. Compare true registration coverage/geometry before making automatic “optimal FPS” assertions.
