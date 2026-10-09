@@ -1355,7 +1355,12 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "Inspect accepted image count and RMS; calibration is not applied to sparse reconstruction yet. " +
             "9. After generating sparse PLY, tap Verify Sparse Points in Third View. " +
             "Inspect successful third-view count or inconclusive reason in diagnostic ZIP. " +
-            "This checks geometry but is not a full 3D scan.") },
+            "This checks geometry but is not a full 3D scan. " +
+            "10. Tap Select Object in Two Photos. Drag a green rectangle around " +
+            "the object in BOTH real source photos, and create the object-focus candidate. " +
+            "Compare Full scene vs Object focus saved clouds, verify kept and excluded " +
+            "point counts, then export each separate PLY. Use a bad/empty region to test " +
+            "the inconclusive path. New diagnostics should contain object_focus_report.json.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
