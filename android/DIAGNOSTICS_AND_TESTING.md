@@ -1,4 +1,4 @@
-# Android diagnostic coverage and testing — v0.3.0 candidate
+# Android diagnostic coverage and testing — v0.4.0 ORB geometry candidate (v0.3 capture verified)
 
 **State:** Android v0.2.0 basic capture/display physically user verified. New v0.3.0 adjustable rate, larger frame counts and combined-export features built and unit-tested in [GitHub Actions 37901552835](https://github.com/auxz2jz/Slot-19/actions/runs/37901552835); **new settings and comparison feature not yet verified on a device**. Governing rules: Master Instruction Library `DIAGNOSTICS_STANDARD.md` and `GUIDED_TESTING_STANDARD.md`.
 
