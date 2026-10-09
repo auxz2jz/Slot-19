@@ -1,29 +1,45 @@
-# Android Video 3D Capture Lab — v0.1.0 CANDIDATE
+# Android Video 3D Capture Lab — v0.2.0
 
-Independent Android implementation in `auxz2jz/Slot-19/android/`. **Windows code remains in the historical root and must never be overwritten by Android work.** All platform rules: `../AGENTS.md`, `../shared/` and the canonical Master Instruction Library.
+This is the **Android-only** implementation of Slot-19. The Windows Python/Codex project is independent and owns the historical repository root. See `../AGENTS.md`, `../windows/OWNERSHIP.md`, `../shared/`, `PROJECT_MEMORY.md`, `CHECKPOINT.md`.
 
-## APK and build record
-- **Debug APK:** `Video3DCapture-Android-v0.1.0-CANDIDATE.apk` inside [GitHub Actions run 37891374599](https://github.com/auxz2jz/Slot-19/actions/runs/37891374599), artifact `video3d-android-v0.1.0-candidate`. GitHub artifacts have a limited retention period.
-- Exact candidate build source: commit `fd7973c6a978136d1154872162f772127c5ecfd9`, preserved as branch `backup/android-v0.1.0-ci-candidate`.
-- SHA-256: `132a5780d575bee9d243c9adccb35a953b42ad998760ef3711eaac620988b639`.
-- `app-debug.apk` generated with command `gradle -p android :app:testDebugUnitTest :app:assembleDebug` using Java 17, Gradle 8.10.2 and Android 35 SDK.
-- Requires **Android 8 (API 26) or later**. Unverified on any physical device. Debug signing from GitHub Actions is not guaranteed to be stable across rebuilds (an uninstall may be necessary before installing a differently signed later candidate; uninstalling may remove app-private capture runs).
+## Download / APK build evidence
 
-## User: Test This Version
-1. Download the APK artifact. On phone, install it with your normal Android file installer (approve installation from that file source when prompted).
-2. Open **Video 3D Capture Lab**. Grant camera permission through **Enable Camera** and confirm the preview works.
-3. Keep an object stationary, move the phone around it, press **Start Live Sampling**, then **Stop Live Sampling**. Verify actual saved frame count and preview. Live mode captures no more than 30 JPEG frames at about 1.2-second intervals.
-4. Tap **Choose Video**, pick an existing video recording, wait for frame validation; verify saved frame preview. Imported-video source is not altered.
-5. Tap **Test This Version**, select **Frames Look Correct** only when physically confirmed; otherwise **Expected Behavior Failed**.
-6. Tap **Export Test + Diagnostics** to create a report ZIP. Diagnostic ZIP deliberately **does not include original video or saved JPEG frames**. Send it back along with any visual description of problems.
+**Latest Android APK is v0.2.0 CANDIDATE (not user-verified).** [GitHub Actions success](https://github.com/auxz2jz/Slot-19/actions/runs/37894898716), artifact `video3d-android-v0.2.0-candidate` (ID `11599926676`); inside: `Video3DCapture-Android-v0.2.0-CANDIDATE.apk`.
 
-The current app does **NOT** perform photogrammetric reconstruction, generate point clouds/meshes/textures, capture full-resolution still photos, select intelligent keyframes, or laser scan. Build/CI PASS is not an Android user-verified baseline.
+- Source tested: `21cc221cdd4421e3ee17c8167b970486cb38f365`, protected as `backup/android-v0.2.0-smart-ci-candidate`.
+- SHA-256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`.
+- APK size: `11550489` bytes. Android 8+ (minSdk 26); Android SDK 35 build, debug signed.
+- Build and unit-test command: `gradle -p android :app:testDebugUnitTest :app:assembleDebug`, Gradle 8.10.2, Java 17.
+- **LAST USER-VERIFIED BASELINE: Android v0.1.0 core capture only**, preserved in `backup/android-v0.1.0-user-verified-capture`. Do not downgrade/delete it based on an untested newer candidate. If the APK cannot upgrade due to debug signing, export any desired runs BEFORE uninstalling v0.1.0; uninstall removes app-private data.
 
-## Source layout
-- `app/src/main/java/com/auxz2jz/videogrammetry/MainActivity.kt`: Compose UI, CameraX preview/raw frame sampling, video importer and guided test controls.
-- `ScanRepository.kt`: isolated run storage, frame validation/hash, persistent diagnostics, test report and redacted ZIP export.
-- `FramePolicy.kt`: bounded fixed-interval sampling policy with JUnit tests.
-- `CHECKPOINT.md`: exact source build hash, test history, known limits, and next action.
-- `PROJECT_MEMORY.md`, `ROADMAP.md`, `DIAGNOSTICS_AND_TESTING.md`: Android-only durable state.
+## Three modes (v0.2.0)
 
-Windows/Codex should read `../windows/OWNERSHIP.md` and only modify Windows-owned files.
+1. **Start Live Sampling / Stop Live Sampling** — original fixed-interval live CameraX saved frames, up to 30; v0.1.0 user-verified behavior preserved in code.
+2. **Choose Video** — import a recording with Android system file picker and extract up to 40 frames, about 1 second apart. Now shows saved-frame preview incrementally during extraction, though video analysis itself remains fixed-interval.
+3. **Start Smart Auto Capture / Stop Smart Auto Capture** — preview camera continuously; lightweight visual scoring asks you to move to a new angle, hold steady, adjust light, or move back when image changes too much. A small progress bar estimates image-change toward another viewpoint; it is NOT a measured movement angle, reliable overlap %, or panorama coverage map. An accepted frame triggers an actual CameraX high-resolution still JPEG, not a saved preview screenshot; max 30 photos. Saved image is hash/dimensions validated in its run's manifest.
+
+No 3D reconstruction, camera-pose recovery, mesh/texture, or laser scanning yet. No automatic engine has produced a 3D result.
+
+## Test v0.2.0 on your phone
+
+1. First export any current tests/captures from v0.1.0; install v0.2.0 over existing app if Android accepts its debug signature. If upgrade fails, uninstall only after backing up desired app-private data.
+2. Verify old **Start Live Sampling** and **Choose Video** still work, including the new progressive preview while video frames extract.
+3. Set a textured, well-lit **stationary object** on a table and start **Smart Auto Capture**. Hold steady and see whether the first photo is saved.
+4. Keep phone in the same location for a few seconds — the app should not take a flood of identical images.
+5. Slowly move around the object to a somewhat new angle, with overlapping views. Hold steady again until the guidance reports a new photo. The progress bar is a heuristic, not an exact motion guide.
+6. Move too rapidly or use poor light to see if warnings change. Do not depend on this experiment to measure spatial object coverage.
+7. Tap **Stop Smart Auto Capture**. Check validated photo count, view last saved photo for color/orientation and ask whether image was truly full-resolution.
+8. Open **Test This Version** and select **Frames Look Correct** only for actual good results; otherwise **Expected Behavior Failed**. Tap **Export Test + Diagnostics** to save an evidence ZIP, then share it with this chat.
+
+Diagnostic ZIP includes manifest/run/test and operation events, not private JPEGs/videos; a separately uploaded screenshot/photo is needed to assess actual sharpness/geometry visually. Documented ZIP export-completion trace limitation from v0.1.0 remains.
+
+## Developer map
+- `app/src/main/java/com/auxz2jz/videogrammetry/MainActivity.kt` — Compose screen, CameraX binding and three modes.
+- `SmartFrameSelector.kt` — experimental grayscale image quality/view-change logic (no measured pose).
+- `ScanRepository.kt` — frame/JPEG validation, hashing, reports, diagnosis, testing, export.
+- `FramePolicy.kt` — v0.1 fixed-interval behavior preserved.
+- `app/src/test/.../SmartFrameSelectorTest.kt` and `FramePolicyTest.kt` — JVM policy regression tests.
+- `SMART_CAPTURE_DESIGN.md`, `CHECKPOINT.md`, `PROJECT_MEMORY.md`, `ROADMAP.md` — enduring design, builds, last verified baseline and exact next action.
+- `history/` — archived earlier checkpoint evidence.
+
+**Windows source remains untouched by Android development.**
