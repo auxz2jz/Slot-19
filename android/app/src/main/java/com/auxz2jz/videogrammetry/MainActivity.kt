@@ -933,7 +933,13 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
         calibrating = true
         calibrationProgress = 0f
-        calibrationStatus = "Finding 9 x 6 inner corners in selected images..."
+        calibrationStatus = "Preparing calibration independently of imported video..."
+        // Stop unused CameraX buffers during native OpenCV calibration.
+        // No active capture is permitted by the checks above.
+        unbindCamera()
+        val calStart=System.currentTimeMillis()
+        currentRun?.event("OPERATION_START","CHECKERBOARD_CALIBRATION",
+            JSONObject().put("selectedImages",images.size))
         calibrationWorker.execute {
             try {
                 val report = checkerboardCalibrator.calibrate(images) { done,total ->
@@ -952,9 +958,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     status = "Checkerboard report saved; Export ALL Runs includes it."
                 }
             } catch(ex:Exception) {
+                currentRun?.event("ERROR","CHECKERBOARD_CALIBRATION",
+                    JSONObject().put("errorType",ex.javaClass.simpleName))
                 ui { calibrationStatus = "Calibration failed: " +
                     ex.javaClass.simpleName + ". See ALL Runs diagnostics." }
-            } finally { ui { calibrating = false } }
+            } finally {
+                currentRun?.event("OPERATION_END","CHECKERBOARD_CALIBRATION",
+                    JSONObject().put("elapsedMs",System.currentTimeMillis()-calStart))
+                ui { calibrating = false }
+            }
         }
     }
 
@@ -1069,8 +1081,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         }
     }
 
-    DisposableEffect(permissionGranted, preview) {
-        if (permissionGranted) coordinator.bindCamera(preview)
+    DisposableEffect(permissionGranted, preview, coordinator.calibrating) {
+        if (permissionGranted && !coordinator.calibrating)
+            coordinator.bindCamera(preview)
         onDispose { coordinator.unbindCamera() }
     }
 
