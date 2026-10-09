@@ -234,3 +234,13 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] Successful after-import calibration 26/29 accepted, RMS .22684px at 1000x467; 1-photo attempt rejected with caught IllegalArgumentException, not app crash. Calibrated intrinsics correctly excluded from 720x1280 scan.
 - [ ] **Calibration-before-import crash still untested**; no evidence of first-calibration-with-zero-videos attempt in these reports. Need fresh preview app and 8–40 board photos, export calibration-only ZIP before video.
 - [ ] Verify shape quality visually on separately exported early object PLY after output collision fix; do not call number of points geometric improvement until user confirms target object recognition.
+
+
+## v0.10.0 experiment and device verification — 2026-10-09
+- [x] Four **independent** algorithm-specific PLY/report paths; legacy subset no longer overwrites early ROI reconstruction; native viewer labels and export pickers/filenames distinguish full scene, ROI-first, filtered scene and multi-view.
+- [x] First genuine optional registered multi-view **new XYZ tracks**: extra 3D-2D PnP camera poses in original ROI frame, new descriptor triangulation, per-view reprojection/cheirality/parallax gates, bounded 8 frames & 5000 points, conservative success verdict; not bundle adjustment/dense mesh.
+- [x] Preserve v0.8.1 and v0.9.0 phone data by side-by-side v0.10 debug preview package suffix `.preview100`; Android-only development source PR #11, master recovery instructions applied.
+- [ ] Latest CI 38004489748 unit tests/Android build and independently verified APKs; preserve exact candidate source.
+- [ ] Real device v0.10: compare 4 distinct PLY results after applying both early ROI reconstruction and later filter; verify that no generated ROI-first or multi-view file is replaced by subset.
+- [ ] Verify multi-view produces geometrically useful new points on actual stationary target: report source frame IDs, number of PnP-supported views, NEW points, and how shapes look. More points alone are NOT a pass. If inconclusive preserve diagnostic cause; improve multi-frame object masks, bundle adjustment, camera compatibility and source tracking next.
+- [ ] Calibration-before-import crash and rotation during native analysis still require actual fresh-device regression tests.
