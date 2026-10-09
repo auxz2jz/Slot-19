@@ -124,3 +124,17 @@ The user verified all three Android capture modes, settings and OpenCV ORB geome
 5. **Calibration is not automatically applied to v0.5 sparse reconstruction.** Camera sensor crop, aspect ratio, lens, zoom and source video may not match the calibration photos. Measure and validate compatibility before using K/distortion in future geometric reconstruction.
 
 The last *fully* user-verified Android capture/ORB baseline is v0.4.0; v0.5.0 had device-confirmed sparse PLY generation but 3D shape could not be viewed. v0.6.0 is a build-tested **CANDIDATE** until the user verifies the viewer, legacy modes and optional calibration on their phone. Keep your previously exported PLYs and diagnostic ZIPs before uninstalling a differently signed debug APK; uninstall may erase private captured runs. See `CHECKPOINT.md` and `POINT_VIEWER_CHECKERBOARD_PLAN.md` for handoff.
+
+
+## v0.6.1 permanent automatic export filenames (fixed)
+
+**Bug fixed:** Android v0.6.0 asked for a `v0.5.0` PLY filename and newly generated diagnostics sometimes carried a hard-coded earlier version. The fix is now in v0.6.1 (source `78e896f7937a4c80a9c1c175963487346bedd816`, recovery branch `backup/android-v0.6.1-dynamic-export-ci-candidate`; [GitHub Actions build 37917793167](https://github.com/auxz2jz/Slot-19/actions/runs/37917793167) SUCCESS).
+
+**Export names derive from the currently installed app version**, not manually typed numbers. Every PLY and latest-run ZIP includes its original run ID plus UTC millisecond timestamp; all-run ZIP includes version + timestamp. E.g. `Android-v0.6.1-sparse-two-view-<runId>-<UTCtime>.ply`, `Android-v0.6.1-last-run-diagnostics-<runId>-<UTCtime>.zip`, `Android-v0.6.1-ALL-run-comparison-<UTCtime>.zip`. When Gradle `versionName` changes for a future release, these filename suggestions and CI APK/artifact names change automatically. Android's save dialog still allows the user to change a suggested name.
+
+Two new pieces of provenance keep history honest: each newly exported ZIP includes `export_metadata.json` with its exporter's version/time, and the all-runs summary includes the **original capture version** per run. Existing old photos, `manifest.json`, `sparse_report.json` and PLYs are **never silently renamed or rewritten**. Stable internal `sparse_two_view.ply` name remains for backward compatibility.
+
+- ARM64 APK `Video3DCapture-Android-v0.6.1-ARM64-CANDIDATE.apk`, 36,486,489 bytes, SHA256 `71abe7e2d04194165911453657ba7b167e33c9e6e4a34feb0ca61c921d79b252`.
+- Universal APK `Video3DCapture-Android-v0.6.1-UNIVERSAL-CANDIDATE.apk`, 153,322,099 bytes, SHA256 `671ac10d49e58293eca29a09c299c7c4c73a77c23c26cbf84d7afcb862ab6d7e`. Both were hash-checked against GitHub Actions artifact manifest, and zip integrity passed.
+
+User should install and verify new naming for all export types, confirm no app regression, and export diagnostics. v0.6.1 is an **unverified patch candidate** until user confirmation; **v0.6.0 remains last user-verified Android app baseline**. See `EXPORT_NAMING_STANDARD.md` and `CHECKPOINT.md`. Windows implementation unchanged.
