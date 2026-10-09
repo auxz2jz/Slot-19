@@ -138,3 +138,23 @@ Two new pieces of provenance keep history honest: each newly exported ZIP includ
 - Universal APK `Video3DCapture-Android-v0.6.1-UNIVERSAL-CANDIDATE.apk`, 153,322,099 bytes, SHA256 `671ac10d49e58293eca29a09c299c7c4c73a77c23c26cbf84d7afcb862ab6d7e`. Both were hash-checked against GitHub Actions artifact manifest, and zip integrity passed.
 
 User should install and verify new naming for all export types, confirm no app regression, and export diagnostics. v0.6.1 is an **unverified patch candidate** until user confirmation; **v0.6.0 remains last user-verified Android app baseline**. See `EXPORT_NAMING_STANDARD.md` and `CHECKPOINT.md`. Windows implementation unchanged.
+
+
+## Android v0.7.0 — Verify two-view sparse points in a THIRD saved photograph
+
+**User-verified fallback: v0.6.1**, source `78e896f7937a4c80a9c1c175963487346bedd816`, protected branch `backup/android-v0.6.1-user-verified-export-naming`. The user confirmed v0.6.1 exports and app functionality; no full-object 3D accuracy has been established.
+
+**New GitHub-built v0.7.0 CANDIDATE**, exact compiled source `40879feaaaa481d9724218443b5f9d0fa9ec6952`, snapshot `backup/android-v0.7.0-third-view-ci-candidate`. GitHub Actions `37919747862` SUCCESS: https://github.com/auxz2jz/Slot-19/actions/runs/37919747862. Artifact `video3d-android-v0.7.0-candidate` ID `11611491283`.
+
+- ARM64 APK: `Video3DCapture-Android-v0.7.0-ARM64-CANDIDATE.apk`, SHA256 `571bda48957b4338b5748500c743b15be492949c346251669178b21033b43dda`, 36,486,489 bytes.
+- Universal APK: `Video3DCapture-Android-v0.7.0-UNIVERSAL-CANDIDATE.apk`, SHA256 `dad2ddd11bba1de526402df71c66ef8422dc8b2f2087e1bdfe19149b60e64c65`, 153,322,099 bytes. Both validated against GitHub manifest and ZIP integrity checked.
+
+**Guided device test:**
+1. Update the APK, preserving old app data if possible; if uninstall required, first export desired scans/PLYs and ZIPs.
+2. Run your usual video/live/Smart capture of stationary textured object with a handheld moving phone. Tap **Analyze Sparse 3D — Two Views** until it reports SPARSE_CANDIDATE. Open the PLY with **View Sparse Points — 3D** and check prior functionality.
+3. Tap **Verify Sparse Points in Third View**. This recomputes the original 3D anchor tracks and matches them in up to four additional saved photos; PnP RANSAC counts genuine 3D-to-2D correspondences and third-view reprojection errors. Status **THIRD_VIEW_SUPPORTED** means some points reproject consistently into a third image; **INCONCLUSIVE** means it lacked sufficient evidence, not that the photos failed. The original PLY and capture remain unchanged.
+4. Export **Test + Diagnostics** or **ALL Runs** ZIP. It now includes `third_view_report.json` or `third_view_last_failure.json`. Share this for evaluation. Do not expect a new merged point cloud from this validation-only stage.
+5. In the new report, `calibrationCompatibility=INCOMPATIBLE_ASPECT_RATIO` means board calibration cannot be directly applied. Your prior checkerboard image 1000×467 and recorded-video frame 720×1280 have differing aspect. Even same aspect alone does NOT prove same lens/zoom/crop, and checkerboard K remains unapplied.
+6. Reconfirm all original capture/ORB/sparse and export-name behavior. User must explicitly confirm results before v0.7 becomes verified.
+
+**Not yet a finished object model:** points remain from two camera views, relative/unknown scale, possible background features, no mesh, no calibrated lens distortion or global multi-view bundle adjustment. See `THIRD_VIEW_GEOMETRY_PLAN.md` and `CHECKPOINT.md` for architecture, limitation and exact recovery instructions.
