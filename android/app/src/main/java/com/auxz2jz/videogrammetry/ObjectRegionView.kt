@@ -125,6 +125,13 @@ class ObjectRegionView(context: Context): View(context) {
             brush.style=Paint.Style.FILL
         }
     }
+    fun releasePhoto() {
+        dragging=false
+        draft=null
+        selectionFinished=null
+        photo?.recycle()
+        photo=null
+    }
     override fun onTouchEvent(event: MotionEvent):Boolean {
         if(photo==null)return false
         when(event.actionMasked) {
@@ -145,6 +152,9 @@ class ObjectRegionView(context: Context): View(context) {
                         return true
                     }
                     draft=null
+                    selected=null
+                    selectionFinished?.invoke(null)
+                    invalidate()
                 }
                 return true
             }
