@@ -10,7 +10,7 @@ Date 2026-10-09 (America/Los_Angeles). Platform Android-only; Windows and Slot-8
 
 ## Current v0.6.0 candidate — NOT USER VERIFIED
 - PR #5 merged to main at **`837ff21901b4d88cb6cab40d934270cf7b8ab330`** (Android-only, new point viewer, safe PLY reader and optional checkerboard calibration).
-- GitHub Actions initial run **`37914986139`** queued at checkpoint creation. Do not claim build PASS or APK until actual result checked.
+- **GitHub Actions run `37914986139` COMPLETED SUCCESS**, Android JVM tests + assembleDebug + checksum + artifact upload. Artifact `video3d-android-v0.6.0-candidate`, ID `11609631676`. Source tested `837ff21901b4d88cb6cab40d934270cf7b8ab330`, protected branch `backup/android-v0.6.0-viewer-calibration-ci-candidate`.
 - Native `SparseCloudView.kt`: colored 3D points drawn on an Android Canvas; drag to rotate, pinch to zoom, reset, change point size/colors, optional 90% cluster focus to hide large sparse triangulation outliers; arbitrary unknown units.
 - `PlyParser.kt`: bounded offline ASCII 1.0 PLY reader with XYZ and flexible RGB property order, 50k vertex cap and finite coordinate checks; pure JVM `PlyParserTest.kt` verifies generated PLY, alternate order, invalid formats and checkerboard dimensions.
 - Main UI: **View Sparse Points — 3D** opens a built-in interactive dialog with all retained app-private saved sparse runs, and **Open a PLY File to View** via Android Storage Access Framework for exported/imported ASCII PLY; previous capture/ORB/pose workflow untouched. The viewer does not imply correct 3D geometry.
@@ -27,10 +27,19 @@ Date 2026-10-09 (America/Los_Angeles). Platform Android-only; Windows and Slot-8
 - Debug APK signing may require uninstall/erase app data. Before uninstalling existing installed APK, export important diagnostics and copy exported PLYs; installed app-private run folders may be lost.
 
 ## Next exact action
-1. Check v0.6 GitHub CI `37914986139`; resolve compilation/test errors using log evidence. Record final source hash/backup branch and artifact hashes.
+1. DONE: GitHub Android run `37914986139` SUCCESS. Source SHA, backup and APK hashes recorded below.
 2. Test on Samsung Galaxy S22 Ultra: open previously generated sparse PLY directly from phone files or a saved app run, rotate/pinch/zoom, focus and reset, select another run; no 3D shape quality claim until visually reviewed.
 3. Take 12–20 images of the printed 9×6 checkerboard with varied angles at same zoom and lighting. Select via **Calibrate Using Checkerboard Photos**; check accepted count and RMS, no automatic changes to sparse reconstruction.
 4. Export ALL Runs + FPS Comparison to include redacted calibration summary. Return ZIP + visual viewer feedback, optionally photos/screenshots if troubleshooting.
 5. Only after physical user confirmation mark v0.6 verified for viewer/calibration input; deeper calibrated sparse 3D remains a later milestone.
 
 More details `android/POINT_VIEWER_CHECKERBOARD_PLAN.md`, `PROJECT_MEMORY.md`, `ROADMAP.md`, `DIAGNOSTICS_AND_TESTING.md`; global `auxz2jz/master-instruction-library`.
+
+## Downloadable v0.6.0 APK fingerprints (reproducible)
+
+- Source commit `837ff21901b4d88cb6cab40d934270cf7b8ab330`; immutable baseline branch `backup/android-v0.6.0-viewer-calibration-ci-candidate` points to it.
+- CI https://github.com/auxz2jz/Slot-19/actions/runs/37914986139 — `testDebugUnitTest` and `assembleDebug` SUCCESS, produced APK artifact `video3d-android-v0.6.0-candidate`, ID `11609631676`.
+- **ARM64 APK** `Video3DCapture-Android-v0.6.0-ARM64-CANDIDATE.apk`, **36,470,105 bytes**, SHA256 `5ffc06933091b4a6a648970ee756ed3b92677c965f6f5c3fa1eafe8143ed9689`.
+- **Universal APK** `Video3DCapture-Android-v0.6.0-UNIVERSAL-CANDIDATE.apk`, **153,305,715 bytes**, SHA256 `718bb8f67d9552f979bb51234f6c6032cf22bb8e962c8d2a4ee99c734e582850`.
+- Downloaded GitHub artifact ZIP integrity PASS; both APK SHA256 MATCH `SHA256SUMS.txt`, files verified at user-accessible output paths. **This only establishes a CI/tested candidate. Neither native viewer operation nor OpenCV checkerboard calibration is yet user verified.**
+- Next: install ARM64 APK (export existing runs/PLYs before uninstall if signing mismatch). Test saved/imported PLY rotation/zoom/cluster, selected 12–20 checkerboard photos, calibration status and RMS, all-run diagnostics; preserve established v0.4 verified capture/ORB baseline and separately v0.5 user-tested sparse PLY generation.
