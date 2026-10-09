@@ -1,13 +1,20 @@
 # Android-only Roadmap
 
 ## A0 — v0.1.0 capture candidate
-- [ ] Build Kotlin + Compose debug APK in Android-only GitHub Actions workflow.
-- [ ] Live CameraX preview and saved frame samples (limited count; no background recording).
-- [ ] Android system document-picker video import and bounded sampling via MediaMetadataRetriever.
-- [ ] Separate non-overwriting capture runs, validated JPEG files, frame manifest and structured diagnostic traces.
-- [ ] User-facing `Test This Version`, manual failure and PASS only with validated outputs plus explicit visual confirmation.
-- [ ] Export redacted test + diagnostics ZIP through Android Storage Access Framework.
-- [ ] Unit/build checks in GitHub CI; candidate status until user physically confirms.
+- [x] Kotlin + Compose APK successfully built in Android-only GitHub Actions (run 37891374599, artifact id 11597604313; not user verified).
+- [x] Live CameraX preview/analysis frame sampling implemented; up to 30 frames. **User camera test pending.**
+- [x] Android document-picker video import and MediaMetadataRetriever sampling implemented; up to 40 frames. **User video test pending.**
+- [x] Non-overwriting capture runs, saved JPEG validation (hash, dimensions, count), manifest, run result and structured event trace implemented.
+- [x] User-facing Test This Version, manual failure and result export implemented (no on-device test yet).
+- [x] Redacted test + diagnostics ZIP via Storage Access Framework implemented (on-device export verification pending).
+- [x] Android unit tests and debug assemble SUCCESS in GitHub CI; source/build are **CANDIDATE, NOT VERIFIED**.
+
+### Device verification still required before baseline
+- [ ] User installs v0.1.0 and confirms camera permission and live preview.
+- [ ] User verifies live saved frame count, color and orientation.
+- [ ] User selects a real recorded video; frames physically save and display correctly.
+- [ ] User completes guided PASS/FAIL and exports test + diagnostic ZIP.
+- [ ] Record user-confirmed last verified baseline with exact artifact/source hash.
 
 ## A1 — quality and usability
 - [ ] Proven/tested live stream frame-orientation and exposure handling.
