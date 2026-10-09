@@ -808,6 +808,19 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun exportObjectFocusPly(uri: Uri) {
+        val run=currentRun ?: return
+        if(objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing || importing)return
+        worker.execute {
+            try {
+                val count=repository.exportObjectFocusPly(run,uri)
+                ui { status="Object-focused PLY exported ("+count+" bytes)" }
+            } catch(ex:Exception) {
+                ui { status="Object-focused PLY export failed: "+ex.javaClass.simpleName }
+            }
+        }
+    }
+
     fun exportSparsePly(uri: Uri) {
         val run = currentRun ?: return
         if (sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
