@@ -75,6 +75,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private val sampling = AtomicBoolean(false)
     private val smartSelecting = AtomicBoolean(false)
     private val smartInFlight = AtomicBoolean(false)
+    private val smartHadError = AtomicBoolean(false)
     private val smartSelector = SmartFrameSelector()
     private var smartLastAnalysisMs = Long.MIN_VALUE
     private var lastGuidanceReason = ""
@@ -128,11 +129,22 @@ class CaptureCoordinator(private val activity: MainActivity) {
                         analyze(image)
                     } catch (exc: Exception) {
                         val run = active
-                        sampling.set(false)
-                        if (run != null && !run.isClosed) {
-                            run.event("ERROR", "LIVE_FRAME", JSONObject().put("errorType", exc.javaClass.simpleName))
-                            val success = run.finish(false, "Live frame processing failed")
-                            finishUi(run, success)
+                        if (smartSelecting.get()) {
+                            smartHadError.set(true)
+                            smartSelecting.set(false)
+                            if (run != null && !run.isClosed) {
+                                run.event("ERROR", "SMART_ANALYSIS",
+                                    JSONObject().put("errorType", exc.javaClass.simpleName))
+                                if (!smartInFlight.get()) finishSmart(run, false)
+                            }
+                        } else {
+                            sampling.set(false)
+                            if (run != null && !run.isClosed) {
+                                run.event("ERROR", "LIVE_FRAME", JSONObject()
+                                    .put("errorType", exc.javaClass.simpleName))
+                                val success = run.finish(false, "Live frame processing failed")
+                                finishUi(run, success)
+                            }
                         }
                     } finally {
                         image.close()
@@ -247,6 +259,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         smartProgress = 0f
         lastGuidanceReason = ""
         smartSelector.reset()
+        smartHadError.set(false)
         smartLastAnalysisMs = Long.MIN_VALUE
         run.event("USER_ACTION", "START_SMART_AUTO_CAPTURE")
         run.event("OPERATION_START", "SMART_AUTO_CAPTURE",
@@ -267,7 +280,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         if (smartInFlight.get()) {
             status = "Finishing the last smart photo..."
         } else if (run != null) {
-            worker.execute { finishSmart(run, true) }
+            worker.execute { finishSmart(run, !smartHadError.get()) }
         }
     }
 
@@ -321,8 +334,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
         val capture = smartImageCapture
         if (capture == null) {
             smartSelecting.set(false)
+            smartHadError.set(true)
             smartInFlight.set(false)
             run.event("ERROR", "SMART_SHUTTER", JSONObject().put("errorType", "ImageCaptureUnavailable"))
+            smartHadError.set(true)
             finishSmart(run, false)
             return
         }
@@ -351,17 +366,19 @@ class CaptureCoordinator(private val activity: MainActivity) {
                             if (count >= SmartFrameSelector.MAX_SHOTS) smartSelecting.set(false)
                         } catch (exc: Exception) {
                             smartSelecting.set(false)
+                            smartHadError.set(true)
                             run.event("ERROR", "SMART_IMAGE_CAPTURE_VALIDATE",
                                 JSONObject().put("errorType", exc.javaClass.simpleName))
                         } finally {
                             smartInFlight.set(false)
-                            if (!smartSelecting.get()) finishSmart(run, run.frameCount > 0)
+                            if (!smartSelecting.get()) finishSmart(run, !smartHadError.get())
                         }
                     }
 
                     override fun onError(exception: ImageCaptureException) {
                         pending.delete()
                         smartSelecting.set(false)
+                        smartHadError.set(true)
                         smartInFlight.set(false)
                         run.event("ERROR", "SMART_SHUTTER",
                             JSONObject().put("errorType", exception.javaClass.simpleName)
