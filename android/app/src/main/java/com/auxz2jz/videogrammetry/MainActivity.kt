@@ -1507,7 +1507,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     }
                     Button(onClick={
                         coordinator.latestRun?.let { run ->
-                            val name=ExportNames.objectFocusPly(BuildConfig.VERSION_NAME,run.id)
+                            val name=ExportNames.filteredScenePly(BuildConfig.VERSION_NAME,run.id)
                             coordinator.logExportName("OBJECT_FOCUS_PLY",name)
                             objectPlyPicker.launch(name)
                         }
