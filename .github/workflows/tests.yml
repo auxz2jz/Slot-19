@@ -3,6 +3,11 @@ name: Python acquisition candidate checks
 on:
   push:
     branches: [main]
+    paths:
+      - "videogrammetry/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - ".github/workflows/tests.yml"
   workflow_dispatch:
 
 jobs:
