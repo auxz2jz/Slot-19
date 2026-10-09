@@ -219,6 +219,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
     val latestRun: ScanRun? get() = currentRun
+    val hasCalibrationHistory: Boolean
+        get() = File(activity.filesDir,"camera_calibration/events.jsonl").isFile
 
     private fun ui(action: () -> Unit) {
         if (!disposed) activity.runOnUiThread { if (!disposed) action() }
@@ -1415,6 +1417,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.calibrationProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.calibrationStatus)
+                    Text("Calibration works independently of video import. The camera " +
+                        "preview pauses during processing to reduce memory pressure. " +
+                        "Afterward you can export calibration diagnostics even with no video runs.")
                     Text("Camera calibration candidate is saved separately. " +
                         "It is NOT automatically applied to other camera modes until verified.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1437,9 +1442,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 val name = ExportNames.allRunsZip(BuildConfig.VERSION_NAME)
                 coordinator.logExportName("ALL_RUNS_ZIP", name)
                 historyPicker.launch(name)
-            }, enabled = coordinator.savedRuns > 0 && !coordinator.liveSampling &&
-                !coordinator.smartSampling && !coordinator.importing && !coordinator.geometryAnalyzing) {
-                Text("Export ALL Runs + FPS Comparison")
+            }, enabled = (coordinator.savedRuns > 0 || coordinator.hasCalibrationHistory) &&
+                !coordinator.liveSampling && !coordinator.smartSampling &&
+                !coordinator.importing && !coordinator.geometryAnalyzing &&
+                !coordinator.calibrating) {
+                Text("Export ALL Runs + Calibration Diagnostics")
             }
             Text("Export filenames automatically include the installed version, run ID (when applicable) and UTC time. Older run metadata keeps its original creation version.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("All completed runs remain stored separately. Latest-run ZIP exports only one run; All Runs ZIP includes every run's reports (no raw photos).",
