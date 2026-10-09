@@ -160,6 +160,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var sparseAvailable by mutableStateOf(
         currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
         private set
+    var earlyObjectSelected by mutableStateOf(
+        currentRun?.let { File(it.directory,"early_object_focus_selection.json").isFile() } ?: false)
+        private set
     var objectFocusAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
         private set
@@ -632,6 +635,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         ui {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            earlyObjectSelected = File(run.directory,"early_object_focus_selection.json").isFile()
             objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
@@ -798,6 +802,45 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 "MODE_MOVE","RESET_VIEW","CREATE_REQUEST")) {
             currentRun?.event("USER_ACTION","OBJECT_FOCUS_UI_"+action,
                 JSONObject().put("photoNumber",step))
+        }
+    }
+
+    /** First select real saved object views BEFORE feature extraction/3D. */
+    fun earlyObjectSourcePhotos(): Pair<File,File>? {
+        if(sparseAnalyzing || geometryAnalyzing || thirdViewAnalyzing ||
+            importing || liveSampling || smartSampling || calibrating ||
+            objectFocusWorking) {
+            objectFocusMessage="Finish the current task before choosing an object"
+            return null
+        }
+        val run=currentRun ?: return null
+        return try {
+            val photos=ObjectFocusProcessor().sourcePhotosBeforeSparse(run)
+            run.event("USER_ACTION","OPEN_EARLY_OBJECT_SELECTOR")
+            photos
+        } catch(ex:Exception) {
+            objectFocusMessage="Complete frame extraction first: "+
+                ex.javaClass.simpleName
+            null
+        }
+    }
+
+    fun saveEarlyObjectFocus(first:FocusRect,second:FocusRect) {
+        val run=currentRun ?: return
+        if(importing || sparseAnalyzing || geometryAnalyzing || calibrating ||
+            liveSampling || smartSampling || thirdViewAnalyzing)return
+        try {
+            val result=ObjectFocusProcessor().saveBeforeSparse(run,first,second)
+            earlyObjectSelected=true
+            objectFocusMessage="Object selected in both photos BEFORE 3D. Tap Analyze Sparse 3D to build full-scene and independent object-priority clouds."
+            status="Early object boxes saved for frames "+
+                result.getJSONArray("sourcePair").getInt(0)+" and "+
+                result.getJSONArray("sourcePair").getInt(1)
+        } catch(ex:Exception) {
+            objectFocusMessage="Could not save early object selection: "+
+                ex.javaClass.simpleName
+            run.event("ERROR","EARLY_OBJECT_SELECTION",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
         }
     }
 
