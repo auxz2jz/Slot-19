@@ -111,11 +111,19 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var previewFile by mutableStateOf(currentRun?.recentPreview()?.absolutePath ?: "")
         private set
+    private val settingsPrefs = activity.getSharedPreferences("sampling_v03", android.content.Context.MODE_PRIVATE)
+    private fun loadOptions(mode: String, defaults: CaptureOptions): CaptureOptions {
+        return CaptureOptions(
+            settingsPrefs.getFloat(mode + "_fps", defaults.targetFps.toFloat()).toDouble()
+                .coerceIn(0.5, 5.0),
+            settingsPrefs.getInt(mode + "_max", defaults.maxFrames).coerceIn(10, 300)
+        )
+    }
     var settingsMode by mutableStateOf("VIDEO")
         private set
-    private var liveOptions by mutableStateOf(CaptureOptions.LIVE_DEFAULT)
-    private var videoOptions by mutableStateOf(CaptureOptions.VIDEO_DEFAULT)
-    private var smartOptions by mutableStateOf(CaptureOptions.SMART_DEFAULT)
+    private var liveOptions by mutableStateOf(loadOptions("LIVE", CaptureOptions.LIVE_DEFAULT))
+    private var videoOptions by mutableStateOf(loadOptions("VIDEO", CaptureOptions.VIDEO_DEFAULT))
+    private var smartOptions by mutableStateOf(loadOptions("SMART", CaptureOptions.SMART_DEFAULT))
     var savedRuns by mutableStateOf(repository.completedRunCount())
         private set
     val editingOptions: CaptureOptions
@@ -139,6 +147,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
             ((value / 10.0).roundToInt() * 10).coerceIn(10, 300)))
     }
     private fun applyOptions(value: CaptureOptions) {
+        settingsPrefs.edit().putFloat(settingsMode + "_fps", value.targetFps.toFloat())
+            .putInt(settingsMode + "_max", value.maxFrames).apply()
         when(settingsMode) {
             "LIVE" -> liveOptions = value
             "SMART" -> smartOptions = value
