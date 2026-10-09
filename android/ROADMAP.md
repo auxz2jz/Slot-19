@@ -107,6 +107,6 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] Record camera model as `ESTIMATED_NOT_CALIBRATED`, translation baseline scale as arbitrary units and output PLY as experimental only; no multi-view/dense geometry claim.
 - [x] Add `sparse_report.json` and `sparse_last_failure.json` to redacted latest/all-run diagnostic ZIPs; PLY exported separately after the user explicitly chooses file destination.
 - [x] Add pure-JVM `SparsePolicyTest.kt` for candidate pair bounds, failure verdicts and PLY format.
-- [ ] CI build/run `37910662990` after one targeted Kotlin syntax fix; inspect result and artifact hash. Preserve final source.
+- [x] CI build `37910662990` SUCCESS after fixing a single Kotlin `JSONArray.length()` call; all JVM tests and ARM64/universal APKs verified. Source `4538e52379eadcee400de9b40748144ebee9a42f` protected in `backup/android-v0.5.0-two-view-ci-candidate`; ARM64 SHA256 `fbc26f5493e823703af40cd9a6f1be8b57d7f7537bb04554903b2f69aba083d9`.
 - [ ] User tests two-view pose on a textured stationary object with actual camera translation; exports sparse PLY and diagnostics and reviews point-cloud shape. Negative case with near-stationary/featureless view must be inconclusive when appropriate.
 - [ ] Prioritize real camera calibration, lens-distortion handling, background/object features, and robust multi-view global poses plus bundle adjustment before claiming a finished 3D model.
