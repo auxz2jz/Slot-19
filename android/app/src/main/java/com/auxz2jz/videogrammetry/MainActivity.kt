@@ -1195,6 +1195,14 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val objectPlyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if(uri != null) coordinator.exportObjectFocusPly(uri) }
+    val reconstructedPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri!=null)
+        coordinator.exportSeparateCloud(uri,CloudArtifacts.ROI_RECONSTRUCTED_PLY) }
+    val multiViewPlyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri -> if(uri!=null)
+        coordinator.exportSeparateCloud(uri,CloudArtifacts.MULTIVIEW_PLY) }
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -1387,6 +1395,80 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Text("Object reconstruction — independent early-ROI model",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("Features were detected INSIDE both object rectangles BEFORE 3D. "+
+                        "Its coordinates are independent from the full-scene cloud.")
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.ROI_RECONSTRUCTED_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.reconstructedAvailable &&
+                        !coordinator.multiviewWorking && !coordinator.sparseAnalyzing) {
+                        Text("View ROI-First Reconstruction — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {
+                            val name=ExportNames.reconstructedPly(
+                                BuildConfig.VERSION_NAME,it.id)
+                            coordinator.logExportName("ROI_RECONSTRUCTED_PLY",name)
+                            reconstructedPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.reconstructedAvailable &&
+                        !coordinator.multiviewWorking && !coordinator.sparseAnalyzing) {
+                        Text("Export ROI-First Reconstruction PLY")
+                    }
+                    Text("Multi-view experiment — adds new XYZ tracks from registered "+
+                        "third/fourth/etc. photos into one LOCAL ROI coordinate frame. "+
+                        "No bundle adjustment or physical dimensions.")
+                    Button(onClick={coordinator.analyzeObjectMultiView()},
+                        enabled=coordinator.reconstructedAvailable &&
+                            !coordinator.multiviewWorking && !coordinator.sparseAnalyzing &&
+                            !coordinator.geometryAnalyzing && !coordinator.thirdViewAnalyzing &&
+                            !coordinator.objectFocusWorking && !coordinator.importing &&
+                            !coordinator.calibrating) {
+                        Text(if(coordinator.multiviewWorking)
+                            "Registering extra photographs..."
+                            else "Build Multi-View Object Cloud — Experimental")
+                    }
+                    if(coordinator.multiviewWorking) LinearProgressIndicator(
+                        progress={coordinator.multiviewProgress},
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.multiviewMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.MULTIVIEW_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    }, enabled=coordinator.multiviewAvailable &&
+                        !coordinator.multiviewWorking) {
+                        Text("View Multi-View Reconstruction — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {
+                            val name=ExportNames.multiviewPly(
+                                BuildConfig.VERSION_NAME,it.id)
+                            coordinator.logExportName("MULTIVIEW_PLY",name)
+                            multiViewPlyPicker.launch(name)
+                        }
+                    }, enabled=coordinator.multiviewAvailable &&
+                        !coordinator.multiviewWorking) {
+                        Text("Export Multi-View PLY — Experimental")
+                    }
+
+                    Text("Filtered scene — legacy AFTER-reconstruction subset",
+                        style=MaterialTheme.typography.titleMedium)
                     Text("Object Focus — experimental", style=MaterialTheme.typography.titleMedium)
                     Text("Draw the object rectangle in BOTH saved source photographs. " +
                         "Points must match inside both rectangles; background features " +
@@ -1417,7 +1499,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         }
                     }, enabled=coordinator.objectFocusAvailable &&
                         !coordinator.objectFocusWorking) {
-                        Text("View Object-Focused Points — 3D")
+                        Text("View Filtered Scene — 3D")
                     }
                     Button(onClick={
                         coordinator.latestRun?.let { run ->
@@ -1427,7 +1509,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         }
                     }, enabled=coordinator.objectFocusAvailable &&
                         !coordinator.objectFocusWorking && !coordinator.sparseAnalyzing) {
-                        Text("Export Object-Focused PLY — Experimental")
+                        Text("Export Filtered Scene PLY — Experimental")
                     }
                     Button(onClick={ coordinator.validateThirdView() },
                         enabled=latest!=null && latest.isClosed &&
@@ -1627,7 +1709,7 @@ private fun SparseViewerDialog(
             Column(Modifier.padding(12.dp),
                 verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Text("Sparse Point Cloud Viewer", style=MaterialTheme.typography.titleLarge)
-                Text("Experimental two-view points, arbitrary size and orientation. " +
+                Text("Separate scene, ROI-first, filtered, and multi-view XYZ sets. " +
                     "Drag to rotate; pinch to zoom. Not a finished 3D model.")
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     Box {
