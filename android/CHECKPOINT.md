@@ -12,7 +12,7 @@ As of 2026-10-09 PDT. Platform: **Android only** in `auxz2jz/Slot-19/android/` a
 
 ## New v0.5.0 experimental CANDIDATE — NOT user verified
 - Android PR #4 merged to main at `09368d80fb8c91de13f7f263ca3a698f7a941000`, versionCode 5, versionName 0.5.0.
-- GitHub Actions `37910493563` started Android Kotlin unit tests and build; inspect actual result BEFORE claiming success or APK.
+- Initial GitHub Actions `37910493563` FAILED Kotlin compile due to missing `JSONArray.length()` invocation in sparse report. Fixed exactly in commit `4538e52379eadcee400de9b40748144ebee9a42f`. **Follow-up CI `37910662990` COMPLETED SUCCESS**, including `testDebugUnitTest`, `assembleDebug`, SHA256 manifest, APK upload.
 - New optional **Analyze Sparse 3D — Two Views** button after completed capture. Existing capture modes, ORB feature analysis, settings and stored JPGs deliberately unchanged.
 - `SparseTwoViewAnalyzer.kt` analyzes a bounded 7 candidate pairs anchored to first saved image; performs real OpenCV 4.12 ORB matching, essential-matrix RANSAC, `recoverPose`, `triangulatePoints`, positive-depth, parallax and reprojection filtering. Chooses one acceptable two-view pair, saves at most a small **unscaled, uncalibrated** colored ASCII PLY. The feature exists only as an EXPERIMENTAL pose/cloud proof of concept, not full-scene SfM/mesh.
 - ***Camera intrinsics are guessed*** (principal point near image center and focal ~0.95×larger frame dimension, no lens correction); monocular relative translation has **unknown scale** (cannot report mm, cm, meters). Feature matches may come from the background, and calibrated real-world object coverage is NOT measured.
@@ -28,10 +28,20 @@ As of 2026-10-09 PDT. Platform: **Android only** in `auxz2jz/Slot-19/android/` a
 - Existing ZIP self-export may miss the post-close EXPORT_RESULT event; known older gap.
 
 ## Next actions
-1. Check Actions build `37910493563`; if compile failed, fix first actual compiler error with smallest Android-only patch. Stop repeating unsuccessful approach per master instructions.
-2. Once passing, record exact tested source SHA, archive source branch, download and hash-verify ARM64 and universal APKs; inspect source ownership.
+1. DONE: First compiler failure isolated to `frames.length` property typo; fixed to `frames.length()`. Final Android CI run `37910662990` SUCCESS.
+2. DONE: Tested source and backup branch, two APK SHA256 hashes and artifacts recorded below; check Windows ownership at end of work.
 3. User physically tests three capture methods and ORB again; run **Analyze Sparse 3D — Two Views** on a textured object with viewpoint translation and a stationary/featureless negative test. Export PLY if available, plus diagnostic ZIP and description of its appearance.
 4. Promote v0.5 only after explicit user confirmation. Preserve last verified v0.4 source and APK.
 5. Next stage, conditional on actual PLY output and calibration quality: more accurate intrinsics, degeneracy screening, multi-view tracking, proper SfM bundle adjustment and iterative sparse densification.
 
 See `android/SPARSE_TWO_VIEW_PLAN.md`, `PROJECT_MEMORY.md`, `ROADMAP.md`, `DIAGNOSTICS_AND_TESTING.md`, master `auxz2jz/master-instruction-library` and repository `AGENTS.md`.
+
+## v0.5.0 successful CI / reproducible APK artifacts — 2026-10-09
+- **Exact compiled candidate source SHA:** `4538e52379eadcee400de9b40748144ebee9a42f`.
+- **Immutable candidate recovery branch:** `backup/android-v0.5.0-two-view-ci-candidate` at exact compiled source.
+- **CI run:** `37910662990` **SUCCESS**, link https://github.com/auxz2jz/Slot-19/actions/runs/37910662990 ; Android debug JVM unit tests, compile, ARM64 and universal APK assembly, hash manifest and artifact upload succeeded.
+- **GitHub artifact:** `video3d-android-v0.5.0-candidate`, artifact ID `11606766326`.
+- **ARM64 APK:** `Video3DCapture-Android-v0.5.0-ARM64-CANDIDATE.apk`, 36,437,337 bytes, SHA256 `fbc26f5493e823703af40cd9a6f1be8b57d7f7537bb04554903b2f69aba083d9`.
+- **Universal APK:** `Video3DCapture-Android-v0.5.0-UNIVERSAL-CANDIDATE.apk`, 153,272,947 bytes, SHA256 `bba3d23425edcc7f6cbd91b6298bdc69ba9c3e5a79891d5521c4493d1f0127cd`.
+- ZIP archive integrity PASS and both APK SHA256 checks MATCH embedded `SHA256SUMS.txt`; extracted into local output paths. No instrumentation/device two-view pose test has been performed; success means compile/unit tests, NOT accurate 3D.
+- Last VERIFIED Android baseline remains v0.4.0 capture and ORB, source `36323ccbda8d6dbf7efce929c14ae909233cee33`, branch `backup/android-v0.4.0-user-verified-orb`. Do not replace it without physical user confirmation.
