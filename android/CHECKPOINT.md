@@ -58,3 +58,15 @@ More details `android/POINT_VIEWER_CHECKERBOARD_PLAN.md`, `PROJECT_MEMORY.md`, `
 Also added `export_metadata.json` in new ZIPs recording installed exporter version/timestamp and original run version (when present), and `originalCaptureAppVersion` per run in summary. New event/report/calibration/manifest fields use runtime app version going forward. **Previous stored run metadata is left untouched**. Android GitHub Actions now derives APK artifact name and APK version from Gradle version dynamically, so future bumps won't silently reuse older APK filenames. Pure JVM tests cover v0.6.1 and hypothetical v0.7.0, all output types, timestamps and run ID safety. Documented permanent standard at `android/EXPORT_NAMING_STANDARD.md`.
 
 **Next steps:** check CI `37917793167`, record compiled source/branch and SHA256 validated APK; install on device and export PLY/last-run/all-run twice to confirm new name suggestions. Inspect `export_metadata.json` and compare captured original version; regress older capture/geometry/viewer/calibration. v0.6.1 candidate only until user confirms. Windows source and root checkpoint untouched.
+
+
+## v0.6.1 compiled APK and source fingerprints — 2026-10-09
+
+- **Exact compiled app source commit** `78e896f7937a4c80a9c1c175963487346bedd816`. Permanent branch `backup/android-v0.6.1-dynamic-export-ci-candidate` points to this same source.
+- GitHub Actions **`37917793167` COMPLETED SUCCESS**, `testDebugUnitTest`, `assembleDebug`, automatically version-derived artifact filenames and SHA256 manifest. Link https://github.com/auxz2jz/Slot-19/actions/runs/37917793167.
+- Uploaded GitHub artifact `video3d-android-v0.6.1-candidate` (artifact ID `11611096463`).
+- **ARM64 Android APK**: `Video3DCapture-Android-v0.6.1-ARM64-CANDIDATE.apk`, **36,486,489 bytes**, SHA256 `71abe7e2d04194165911453657ba7b167e33c9e6e4a34feb0ca61c921d79b252`.
+- **Universal Android APK**: `Video3DCapture-Android-v0.6.1-UNIVERSAL-CANDIDATE.apk`, **153,322,099 bytes**, SHA256 `671ac10d49e58293eca29a09c299c7c4c73a77c23c26cbf84d7afcb862ab6d7e`.
+- Actual downloaded artifact ZIP integrity PASS, both APK SHA256 hashes MATCH `SHA256SUMS.txt`. APK files successfully extracted to download paths. User installed v0.6.1? **NO, not yet user tested.**
+- Confirmed Windows root `videogrammetry/capture.py`, `videogrammetry/__main__.py`, `tests/test_capture.py`, root `CHECKPOINT.md` unchanged in main by exact Git blob hashes. Slot-8 untouched. Verified v0.6.0 fallback source remains `backup/android-v0.6.0-user-verified-viewer-calibration`.
+- User next: install v0.6.1 ARM64; use sparse PLY / latest-run diagnostics / ALL run history export; check filenames all say v0.6.1 with unique run and UTC stamp. In new ZIP inspect `export_metadata.json` `exportingAppVersion = 0.6.1`; old capture manifest may still say v0.5.0 due to historic records, intentionally unmodified. Keep testing point cloud viewer/9x6 calibration and existing capture methods. Only user-device confirmation can promote v0.6.1 verified.
