@@ -24,6 +24,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -31,6 +32,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedCard
@@ -55,6 +58,7 @@ import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private lateinit var capture: CaptureCoordinator
@@ -81,6 +85,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private var lastGuidanceReason = ""
     private var smartImageCapture: ImageCapture? = null
     private var active: ScanRun? = null
+    private var activeOptions: CaptureOptions = CaptureOptions.LIVE_DEFAULT
     private var lastSampleMs = Long.MIN_VALUE
     private var provider: ProcessCameraProvider? = null
     private var disposed = false
@@ -106,6 +111,40 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var previewFile by mutableStateOf(currentRun?.recentPreview()?.absolutePath ?: "")
         private set
+    var settingsMode by mutableStateOf("VIDEO")
+        private set
+    private var liveOptions by mutableStateOf(CaptureOptions.LIVE_DEFAULT)
+    private var videoOptions by mutableStateOf(CaptureOptions.VIDEO_DEFAULT)
+    private var smartOptions by mutableStateOf(CaptureOptions.SMART_DEFAULT)
+    var savedRuns by mutableStateOf(repository.completedRunCount())
+        private set
+    val editingOptions: CaptureOptions
+        get() = when (settingsMode) {
+            "LIVE" -> liveOptions
+            "SMART" -> smartOptions
+            else -> videoOptions
+        }
+    fun chooseSettingsMode(mode: String) {
+        if (!liveSampling && !smartSampling && !importing &&
+            mode in setOf("LIVE", "VIDEO", "SMART")) settingsMode = mode
+    }
+    fun setTargetFps(value: Double) {
+        val old = editingOptions
+        val quantized = ((value * 2.0).roundToInt() / 2.0).coerceIn(0.5, 5.0)
+        applyOptions(CaptureOptions(quantized, old.maxFrames))
+    }
+    fun setFrameLimit(value: Int) {
+        val old = editingOptions
+        applyOptions(CaptureOptions(old.targetFps,
+            ((value / 10.0).roundToInt() * 10).coerceIn(10, 300)))
+    }
+    private fun applyOptions(value: CaptureOptions) {
+        when(settingsMode) {
+            "LIVE" -> liveOptions = value
+            "SMART" -> smartOptions = value
+            else -> videoOptions = value
+        }
+    }
     val latestRun: ScanRun? get() = currentRun
 
     private fun ui(action: () -> Unit) {
@@ -190,6 +229,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
             return
         }
         val run = repository.create("live_camera")
+        activeOptions = liveOptions
+        run.configure(activeOptions)
         currentRun = run
         active = run
         lastSampleMs = Long.MIN_VALUE
@@ -197,7 +238,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
         previewFile = ""
         run.event("USER_ACTION", "START_LIVE_SAMPLING")
         run.event("OPERATION_START", "LIVE_FRAME_SAMPLING", JSONObject()
-            .put("intervalMs", FramePolicy.LIVE_INTERVAL_MS).put("maxFrames", FramePolicy.LIVE_FRAME_LIMIT))
+            .put("intervalMs", activeOptions.intervalMs)
+            .put("requestedFps", activeOptions.targetFps)
+            .put("maxFrames", activeOptions.maxFrames))
         sampling.set(true)
         liveSampling = true
         status = "Live sampling — slowly walk around the stationary object"
@@ -223,7 +266,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         if (!sampling.get()) return
         val run = active ?: return
         val now = SystemClock.elapsedRealtime()
-        if (!FramePolicy.shouldAccept(now, lastSampleMs, FramePolicy.LIVE_INTERVAL_MS)) return
+        if (!FramePolicy.shouldAccept(now, lastSampleMs, activeOptions.intervalMs)) return
         lastSampleMs = now
         val bitmap = bitmapFromImage(image)
         try {
@@ -235,7 +278,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     status = "Live: " + count + " frames actually saved"
                 }
             }
-            if (count >= FramePolicy.LIVE_FRAME_LIMIT) {
+            if (count >= activeOptions.maxFrames) {
                 sampling.set(false)
                 finishUi(run, run.finish(true))
             }
@@ -252,6 +295,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
             return
         }
         val run = repository.create("smart_auto")
+        activeOptions = smartOptions
+        run.configure(activeOptions)
         currentRun = run
         active = run
         visibleCount = 0
@@ -263,7 +308,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         smartLastAnalysisMs = Long.MIN_VALUE
         run.event("USER_ACTION", "START_SMART_AUTO_CAPTURE")
         run.event("OPERATION_START", "SMART_AUTO_CAPTURE",
-            JSONObject().put("maxPhotos", SmartFrameSelector.MAX_SHOTS)
+            JSONObject().put("maxPhotos", activeOptions.maxFrames)
+                .put("maxShutterFps", activeOptions.targetFps)
                 .put("cameraOutput", "ImageCapture original JPEG")
                 .put("guidance", "approximate image change, not tracked position"))
         smartSelecting.set(true)
@@ -309,7 +355,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
             }
         }
         val signature = SmartFrameSelector.signature(gray)
-        val decision = smartSelector.decide(signature, now)
+        val decision = smartSelector.decide(signature, now, activeOptions.intervalMs)
         if (lastGuidanceReason != decision.reason) {
             lastGuidanceReason = decision.reason
             run.event("FRAME_DECISION", "SMART_VIEW_ASSESSMENT",
@@ -363,7 +409,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
                                 smartGuidance = "Photo " + count + " saved — move to a new angle"
                                 smartProgress = 0f
                             }
-                            if (count >= SmartFrameSelector.MAX_SHOTS) smartSelecting.set(false)
+                            if (count >= activeOptions.maxFrames) smartSelecting.set(false)
                         } catch (exc: Exception) {
                             smartSelecting.set(false)
                             smartHadError.set(true)
@@ -437,14 +483,17 @@ class CaptureCoordinator(private val activity: MainActivity) {
         visibleCount = 0
         previewFile = ""
         status = "Opening selected video recording..."
+        val chosenOptions = videoOptions
         worker.execute {
             val run = repository.create("recorded_video")
+            run.configure(chosenOptions)
             currentRun = run
             active = run
             run.event("USER_ACTION", "CHOOSE_VIDEO")
             run.event("OPERATION_START", "VIDEO_FRAME_EXTRACTION", JSONObject()
-                .put("intervalMs", FramePolicy.IMPORT_INTERVAL_MS)
-                .put("maxFrames", FramePolicy.IMPORT_FRAME_LIMIT))
+                .put("intervalMs", chosenOptions.intervalMs)
+                .put("requestedFps", chosenOptions.targetFps)
+                .put("maxFrames", chosenOptions.maxFrames))
             val retriever = MediaMetadataRetriever()
             var valid = false
             var reason = ""
@@ -453,11 +502,11 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: throw IllegalArgumentException("No video duration")
                 require(durationMs > 0) { "Video duration was zero" }
-                val attempts = min(FramePolicy.IMPORT_FRAME_LIMIT,
-                    (durationMs / FramePolicy.IMPORT_INTERVAL_MS + 1).toInt())
+                val attempts = minOf(chosenOptions.maxFrames.toLong(),
+                    durationMs / chosenOptions.intervalMs + 1L).toInt()
                 var missed = 0
                 for (index in 0 until attempts) {
-                    val ms = index * FramePolicy.IMPORT_INTERVAL_MS
+                    val ms = index.toLong() * chosenOptions.intervalMs
                     val frame = retriever.getFrameAtTime(ms * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
                     if (frame == null) { missed++; continue }
                     val reduced = if (frame.width > 1280) {
@@ -492,6 +541,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     private fun finishUi(run: ScanRun, success: Boolean) {
         ui {
             currentRun = run
+            savedRuns = repository.completedRunCount()
             active = null
             visibleCount = run.frameCount
             previewFile = run.recentPreview()?.absolutePath ?: ""
@@ -528,6 +578,21 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun exportAllRuns(uri: Uri) {
+        if (liveSampling || smartSampling || importing) {
+            status = "Finish current capture before exporting comparison history"
+            return
+        }
+        worker.execute {
+            try {
+                val count = repository.exportAllRunDiagnostics(uri)
+                ui { status = "Exported complete comparison history for " + count + " runs" }
+            } catch (exc: Exception) {
+                ui { status = "History export failed: " + exc.javaClass.simpleName }
+            }
+        }
+    }
+
     fun shutdown() {
         sampling.set(false)
         smartSelecting.set(false)
@@ -553,6 +618,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val videoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) coordinator.importVideo(uri) }
+    val historyPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportDiagnostics(uri) }
