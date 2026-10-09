@@ -32,6 +32,58 @@ class ScanRepository(private val context: Context) {
         return ScanRun(this, File(root, id).also { it.mkdirs() }, id, kind, false)
     }
 
+    fun completedRunCount(): Int = root.listFiles()?.count {
+        it.isDirectory && File(it, "result.json").isFile()
+    } ?: 0
+
+    /** Compare all completed runs, retaining original runs and excluding camera media. */
+    fun exportAllRunDiagnostics(uri: Uri): Int {
+        val runs = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
+            ?.sortedBy { it.name } ?: emptyList()
+        require(runs.isNotEmpty()) { "No completed runs" }
+        val files = listOf("manifest.json", "result.json", "events.jsonl",
+            "test_results.json", "test_report.txt")
+        val rows = JSONArray()
+        val destination = context.contentResolver.openOutputStream(uri)
+            ?: throw IllegalStateException("Cannot write history ZIP")
+        destination.use { sink ->
+            ZipOutputStream(sink).use { zip ->
+                fun add(path: String, bytes: ByteArray) {
+                    zip.putNextEntry(ZipEntry(path))
+                    zip.write(bytes)
+                    zip.closeEntry()
+                }
+                add("README.txt", ("Capture comparison history: all completed runs, " +
+                    "without saved images or source recordings.\n" +
+                    "Frame speed and edge scores alone cannot establish which 3D model is best.\n").toByteArray())
+                for (folder in runs) {
+                    val result = runCatching {
+                        JSONObject(File(folder, "result.json").readText())
+                    }.getOrElse {
+                        JSONObject().put("runId", folder.name).put("status", "UNREADABLE")
+                    }
+                    rows.put(JSONObject()
+                        .put("runId", folder.name)
+                        .put("sourceKind", result.optString("sourceKind"))
+                        .put("status", result.optString("status"))
+                        .put("frameCount", result.optInt("frameCount"))
+                        .put("requestedFps", result.opt("requestedFps"))
+                        .put("measuredFps", result.opt("measuredFps"))
+                        .put("qualitySummary", result.optJSONObject("qualitySummary")))
+                    for (name in files) {
+                        val source = File(folder, name)
+                        if (source.isFile) add("runs/" + folder.name + "/" + name, source.readBytes())
+                    }
+                }
+                add("all_runs_summary.json", JSONObject()
+                    .put("appVersion", "android-0.3.0")
+                    .put("includedRunCount", runs.size)
+                    .put("runs", rows).toString(2).toByteArray())
+            }
+        }
+        return runs.size
+    }
+
     fun latest(): ScanRun? {
         val completed = root.listFiles()?.filter { it.isDirectory && File(it, "result.json").isFile() }
             ?.maxByOrNull { it.name } ?: return null
@@ -69,7 +121,7 @@ class ScanRepository(private val context: Context) {
                         zip.closeEntry()
                         total += bytes.size
                     }
-                    entry("README.txt", ("Android Video 3D Capture Lab v0.2.0 diagnostics.\n" +
+                    entry("README.txt", ("Android Video 3D Capture Lab v0.3.0 diagnostics.\n" +
                         "No source video, camera image, filename or private URI included.\n").toByteArray())
                     names.forEach { name ->
                         val file = File(run.directory, name)
@@ -99,6 +151,11 @@ class ScanRun internal constructor(
     private var sequence = 0
     private val frameEntries = JSONArray()
     private var closed = false
+    private var options: CaptureOptions? = null
+    private var previousSignature: SmartSignature? = null
+    private var nearDuplicateCount = 0
+    private var imageAnalysisCount = 0
+    private var processingStartedAtMs = SystemClock.elapsedRealtime()
     private var previousState = "CREATED"
 
     init {
@@ -117,6 +174,17 @@ class ScanRun internal constructor(
         }
     }
 
+    @Synchronized
+    fun configure(newOptions: CaptureOptions) {
+        check(!closed && frameEntries.length() == 0) { "Settings must be set before capture" }
+        options = newOptions
+        processingStartedAtMs = SystemClock.elapsedRealtime()
+        event("CAPTURE_SETTINGS", "CONFIGURE_RUN", JSONObject()
+            .put("requestedFps", newOptions.targetFps)
+            .put("requestedIntervalMs", newOptions.intervalMs)
+            .put("maxFrames", newOptions.maxFrames).put("mode", sourceKind))
+    }
+
     val frameCount: Int get() = synchronized(this) { frameEntries.length() }
     val isClosed: Boolean get() = synchronized(this) { closed }
 
@@ -129,7 +197,7 @@ class ScanRun internal constructor(
             .put("sequenceNumber", ++sequence)
             .put("timestampUtcMs", System.currentTimeMillis())
             .put("monotonicTimeMs", SystemClock.elapsedRealtime() - startedMs)
-            .put("appVersion", "android-0.2.0")
+            .put("appVersion", "android-0.3.0")
             .put("sessionId", sessionId)
             .put("correlationId", id)
             .put("state", previousState)
@@ -157,10 +225,30 @@ class ScanRun internal constructor(
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(output.absolutePath, options)
             check(options.outWidth > 0 && options.outHeight > 0) { "Frame is not decodable" }
+            val small = Bitmap.createScaledBitmap(bitmap, SmartFrameSelector.WIDTH,
+                SmartFrameSelector.HEIGHT, true)
+            val pixels = IntArray(SmartFrameSelector.WIDTH * SmartFrameSelector.HEIGHT)
+            small.getPixels(pixels, 0, SmartFrameSelector.WIDTH, 0, 0,
+                SmartFrameSelector.WIDTH, SmartFrameSelector.HEIGHT)
+            if (small !== bitmap) small.recycle()
+            val signature = SmartFrameSelector.signature(IntArray(pixels.size) { i ->
+                val c = pixels[i]
+                (((c shr 16) and 255) * 30 + ((c shr 8) and 255) * 59 +
+                    (c and 255) * 11) / 100
+            })
+            val change = previousSignature?.let {
+                SmartFrameSelector.imageChange(it, signature)
+            }
+            if (change != null && change < 0.025) nearDuplicateCount++
+            previousSignature = signature
+            imageAnalysisCount++
             frameEntries.put(JSONObject()
                 .put("name", name).put("width", options.outWidth).put("height", options.outHeight)
                 .put("bytes", output.length()).put("sha256", sha256(output))
-                .put("sourceTimeMs", sourceTimeMs))
+                .put("sourceTimeMs", sourceTimeMs)
+                .put("brightnessMean", signature.meanBrightness)
+                .put("sharpnessProxy", signature.meanEdgeStrength)
+                .put("previousViewChangeProxy", change))
             if (index == 1 || index % 5 == 0)
                 event("STATE_TRANSITION", "FRAME_SAVED", JSONObject()
                     .put("frameCount", index).put("sourceTimeMs", sourceTimeMs))
@@ -226,11 +314,30 @@ class ScanRun internal constructor(
         event("STATE_TRANSITION", "VALIDATE_FRAMES")
         val verified = validateSavedFrames()
         val success = inputSucceeded && verified && frameEntries.length() > 0
+        val entries = (0 until frameEntries.length()).map { frameEntries.getJSONObject(it) }
+        val requestedTimes = entries.map { it.optLong("sourceTimeMs", 0L) }
+        val measuredFps = FrameRateAdvice.effectiveFps(requestedTimes)
+        val sharpness = entries.filter { it.has("sharpnessProxy") }
+            .map { it.optDouble("sharpnessProxy") }
+        val brightness = entries.filter { it.has("brightnessMean") }
+            .map { it.optDouble("brightnessMean") }
+        val quality = JSONObject()
+            .put("adjacentNearDuplicateProxyCount", nearDuplicateCount)
+            .put("adjacentPairCount", (imageAnalysisCount - 1).coerceAtLeast(0))
+            .put("totalSavedBytes", entries.sumOf { it.optLong("bytes", 0L) })
+            .put("interpretation", "Pixel proxies only; not geometric overlap or 3D model quality")
+        if (sharpness.isNotEmpty()) quality.put("meanSharpnessProxy", sharpness.average())
+        if (brightness.isNotEmpty()) quality.put("meanBrightness", brightness.average())
+        val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAtMs
         File(directory, "manifest.json").writeText(JSONObject()
-            .put("schemaVersion", 1).put("appVersion", "android-0.2.0")
+            .put("schemaVersion", 1).put("appVersion", "android-0.3.0")
             .put("runId", id).put("sourceKind", sourceKind)
-            .put("frameIntervalMs", if (sourceKind == "smart_auto") 0L else if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS
-                else FramePolicy.IMPORT_INTERVAL_MS)
+            .put("requestedFps", options?.targetFps)
+            .put("requestedMaxFrames", options?.maxFrames)
+            .put("measuredFps", measuredFps)
+            .put("qualitySummary", quality)
+            .put("frameIntervalMs", if (sourceKind == "smart_auto") 0L else options?.intervalMs
+                ?: if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS else FramePolicy.IMPORT_INTERVAL_MS)
             .put("samplingMethod", if (sourceKind == "smart_auto")
                 "heuristic_quality_and_view_change_no_pose" else "fixed_interval_not_quality_filtered")
             .put("sourceTimestampNote", "Requested sampling time; not verified geometric camera pose")
@@ -239,12 +346,20 @@ class ScanRun internal constructor(
         File(directory, "result.json").writeText(JSONObject()
             .put("runId", id).put("sourceKind", sourceKind)
             .put("frameCount", frameEntries.length()).put("status", status)
+            .put("requestedFps", options?.targetFps).put("requestedMaxFrames", options?.maxFrames)
+            .put("measuredFps", measuredFps)
+            .put("processingElapsedMs", processingElapsedMs)
+            .put("qualitySummary", quality)
             .put("outputValidated", verified).put("reason", reason.take(100)).toString(2))
         event("OUTPUT_VALIDATION", "VALIDATE_FRAMES", JSONObject()
-            .put("frameCount", frameEntries.length()).put("valid", verified))
+            .put("frameCount", frameEntries.length()).put("valid", verified)
+            .put("requestedFps", options?.targetFps).put("measuredFps", measuredFps)
+            .put("processingElapsedMs", processingElapsedMs)
+            .put("qualitySummary", quality))
         previousState = status
         event("OPERATION_RESULT", "CAPTURE_FINISHED", JSONObject()
-            .put("success", success).put("status", status).put("frameCount", frameEntries.length()))
+            .put("success", success).put("status", status).put("frameCount", frameEntries.length())
+            .put("requestedFps", options?.targetFps).put("measuredFps", measuredFps))
         return success
     }
 
@@ -283,7 +398,7 @@ class ScanRun internal constructor(
         val passed = objective && looksCorrect
         val testStatus = if (passed) "PASS" else "FAIL"
         File(directory, "test_results.json").writeText(JSONObject()
-            .put("testId", "android_v0.1.0_capture")
+            .put("testId", "android_v0.3.0_capture")
             .put("testSessionId", UUID.randomUUID().toString())
             .put("runId", id).put("objectiveOutputValid", objective)
             .put("visualResultSource", if (looksCorrect) "MANUAL_PASS" else "MANUAL_FAIL")
@@ -291,7 +406,7 @@ class ScanRun internal constructor(
             .put("note", "A PASS does not establish user-verified baseline without user confirmation.")
             .toString(2))
         File(directory, "test_report.txt").writeText(
-            "Android v0.1.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
+            "Android v0.3.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
             "Output files/hashes validated: $objective\nVisual confirmation: $looksCorrect\n" +
             "Test: $testStatus\n")
         event("TEST_VERIFICATION", "VALIDATE_CAPTURE", JSONObject()
