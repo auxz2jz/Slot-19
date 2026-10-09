@@ -153,6 +153,13 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var sparseAvailable by mutableStateOf(
         currentRun?.let { File(it.directory, "sparse_two_view.ply").isFile() } ?: false)
         private set
+    var objectFocusAvailable by mutableStateOf(
+        currentRun?.let { File(it.directory,"sparse_object_focus.ply").isFile() } ?: false)
+        private set
+    var objectFocusWorking by mutableStateOf(false)
+        private set
+    var objectFocusMessage by mutableStateOf("Object focus not selected yet")
+        private set
     var savedClouds by mutableStateOf(repository.savedPlyEntries())
         private set
     var viewerCloud by mutableStateOf<PointCloud?>(null)
@@ -598,6 +605,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         ui {
             currentRun = run
             sparseAvailable = File(run.directory, "sparse_two_view.ply").isFile()
+            objectFocusAvailable = File(run.directory,"sparse_object_focus.ply").isFile()
+            objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
             savedRuns = repository.completedRunCount()
@@ -672,6 +681,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
         sparseAnalyzing = true
         sparseAvailable = false
+        objectFocusAvailable = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -688,6 +698,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     sparseAvailable = success &&
                         File(run.directory,"sparse_two_view.ply").isFile()
                     savedClouds = repository.savedPlyEntries()
+                    objectFocusAvailable = false
+                    objectFocusMessage = if(success)
+                        "Ready to select the object in both saved photos"
+                        else "No sparse points available for object focus"
                     sparseMessage = if (success)
                         "Experimental cloud: " + result.optInt("pointCount") +
                             " points from two views. Unknown scale; not a finished 3D model."
