@@ -537,4 +537,108 @@ class SparseTwoViewAnalyzer {
             throw ex
         }
     }
+
+    /**
+     * Optional early-selected target: independently detect ORB points INSIDE
+     * two user rectangles, then match/solve/triangulate a fresh object-priority
+     * candidate. Scene PLY remains untouched and retains background pose cues.
+     * This targeted solution has its OWN arbitrary coordinate system, not
+     * registered to the scene cloud or multi-view bundle adjustment.
+     */
+    fun analyzeEarlySelectedObject(run:ScanRun):JSONObject {
+        require(run.isClosed && run.resultIsValid()) { "Completed capture needed" }
+        val saved=File(run.directory,"early_object_focus_selection.json")
+        require(saved.isFile) { "Select object before reconstruction first" }
+        val selection=JSONObject(saved.readText())
+        require(selection.getString("runId")==run.id &&
+            selection.getInt("schemaVersion")==1) { "Stale early selection" }
+        val pair=selection.getJSONArray("sourcePair")
+        val images=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val actual=EarlyObjectFocusPolicy.sourcePair(images.length())
+        require(pair.getInt(0)==actual.first && pair.getInt(1)==actual.second &&
+            selection.optInt("sourceFrameCount")==images.length()) {
+            "Selected photos no longer match current capture"
+        }
+        fun rectangle(key:String):FocusRect {
+            val o=selection.getJSONObject(key)
+            return FocusRect(o.getDouble("left"),o.getDouble("top"),
+                o.getDouble("right"),o.getDouble("bottom"))
+        }
+        val boxA=rectangle("firstRectangle")
+        val boxB=rectangle("secondRectangle")
+        require(EarlyObjectFocusPolicy.selectionValid(boxA,boxB)) {
+            "Need TWO valid object rectangles"
+        }
+        val id=UUID.randomUUID().toString()
+        val report=JSONObject().put("operationId",id).put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("sourcePair",pair)
+            .put("method","EARLY_ROI_MASKED_ORB_2400_INDEPENDENT_TWO_VIEW_POSE")
+            .put("reconstructedIndependently",true)
+            .put("usesOriginalSceneCameraPose",false)
+            .put("sameCoordinateSystemAsFullScene",false)
+            .put("scale","UNKNOWN_ARBITRARY_BASELINE")
+            .put("firstRectangle",selection.getJSONObject("firstRectangle"))
+            .put("secondRectangle",selection.getJSONObject("secondRectangle"))
+            .put("status","IN_PROGRESS")
+            .put("warning","Points re-detected within object boxes BEFORE triangulation. Separate estimated two-view pose; backgrounds inside boxes can pass. No mesh, true scale, bundle adjustment or globally shared coordinates.")
+        run.event("OPERATION_START","EARLY_OBJECT_FOCUS",
+            JSONObject().put("operationId",id).put("sourceFrameB",actual.second))
+        val focusFile=File(run.directory,"sparse_object_focus.ply")
+        try {
+            check(OpenCVLoader.initLocal()) { "OpenCV initialization failed" }
+            val orb=ORB.create(2400)
+            val choice:Candidate
+            try {
+                val a=features(checkedFile(run,images,actual.first),orb,boxA)
+                try {
+                    val second=features(checkedFile(run,images,actual.second),orb,boxB)
+                    try { choice=candidate(a,second,actual.first,actual.second) }
+                    finally { second.release() }
+                } finally { a.release() }
+            } finally { orb.clear() }
+            report.put("featuresA",choice.report.optInt("featuresA"))
+                .put("featuresB",choice.report.optInt("featuresB"))
+                .put("ratioMatches",choice.report.optInt("ratioMatches"))
+                .put("triangulatedPositiveDepth",
+                    choice.report.optInt("triangulatedPositiveDepth"))
+                .put("pairVerdict",choice.report.optString("verdict"))
+                .put("medianParallaxDeg",choice.report.opt("medianParallaxDeg"))
+                .put("medianReprojectionPx",choice.report.opt("medianReprojectionPx"))
+            val points=choice.vertices
+            report.put("objectCandidatePoints",points.size)
+                .put("originalScenePoints",JSONObject(
+                    File(run.directory,"sparse_report.json").readText())
+                    .optInt("pointCount"))
+                .put("excludedScenePoints",JSONObject.NULL)
+                .put("status",EarlyObjectFocusPolicy.candidateLabel(points.size))
+            if(points.isEmpty()) {
+                focusFile.delete()
+            } else {
+                val tmp=File(run.directory,"sparse_object_focus.ply.tmp")
+                tmp.writeText(SparsePolicy.asciiPly(points))
+                check(tmp.length()>150) { "Object-priority PLY empty" }
+                check(tmp.renameTo(focusFile)) { "Failed finalizing object-priority PLY" }
+            }
+            val tmp=File(run.directory,"object_focus_report.json.tmp")
+            tmp.writeText(report.toString(2))
+            check(tmp.renameTo(File(run.directory,"object_focus_report.json")))
+            run.event("ANALYSIS_RESULT","EARLY_OBJECT_FOCUS",
+                JSONObject().put("operationId",id)
+                    .put("status",report.optString("status"))
+                    .put("focusPoints",points.size)
+                    .put("scenePoints",report.optInt("originalScenePoints")))
+            return report
+        } catch(ex:Exception) {
+            report.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
+            File(run.directory,"object_focus_last_failure.json")
+                .writeText(report.toString(2))
+            run.event("ERROR","EARLY_OBJECT_FOCUS",
+                JSONObject().put("operationId",id)
+                    .put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
 }
