@@ -62,7 +62,8 @@ class CheckerboardCalibrator(private val context: Context) {
                 .put("details",extra)
             File(root,"events.jsonl").appendText(data.toString()+"\n")
         }
-        event("CALIBRATION_REQUEST",JSONObject().put("selected",images.size))
+        event("CALIBRATION_REQUEST",JSONObject().put("selected",images.size)
+            .put("priorVideoRequired",false).put("maxDecodeDimensionPx",1200))
         try {
             check(OpenCVLoader.initLocal()) { "OpenCV calibration module unavailable" }
             for ((i,uri) in images.withIndex()) {
@@ -75,7 +76,7 @@ class CheckerboardCalibrator(private val context: Context) {
                     progress(i+1,images.size);continue
                 }
                 var sample=1
-                while(info.outWidth/sample>1800 || info.outHeight/sample>1800)sample*=2
+                while(info.outWidth/sample>1200 || info.outHeight/sample>1200)sample*=2
                 val bitmap=context.contentResolver.openInputStream(uri)?.use {
                     BitmapFactory.decodeStream(it,null,
                         BitmapFactory.Options().apply { inSampleSize=sample })
@@ -84,6 +85,7 @@ class CheckerboardCalibrator(private val context: Context) {
                     issues.put(JSONObject().put("imageIndex",i).put("reason","DECODE_FAILED"))
                     progress(i+1,images.size);continue
                 }
+                // Bound native OpenCV memory per photo; no 4K+ decode.
                 val rgba=Mat();val gray=Mat();val corners=MatOfPoint2f()
                 try {
                     if (validWidth!=0 &&
