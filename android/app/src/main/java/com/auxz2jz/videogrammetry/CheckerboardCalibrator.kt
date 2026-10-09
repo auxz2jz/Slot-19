@@ -31,7 +31,7 @@ class CheckerboardCalibrator(private val context: Context) {
         require(images.size in 8..40) { "Select 8–40 photos taken using one camera/lens/zoom" }
         val runId=UUID.randomUUID().toString()
         val report=JSONObject()
-            .put("calibrationId",runId).put("appVersion","android-0.6.0")
+            .put("calibrationId",runId).put("appVersion","android-" + BuildConfig.VERSION_NAME)
             .put("targetType","CHECKERBOARD")
             .put("innerColumns",CheckerboardTarget.INNER_COLUMNS)
             .put("innerRows",CheckerboardTarget.INNER_ROWS)
