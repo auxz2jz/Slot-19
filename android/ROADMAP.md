@@ -118,3 +118,18 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] Temporary standalone offline HTML interactive viewer and PNG nine-cloud overview generated in chat for immediate visual access.
 - [ ] Prioritize **Preview Sparse Points** built-in touch-enabled Android point-cloud viewer before deeper SfM; include point size, color/depth option, rotate/zoom/reset, relative unknown scale notice and related diagnostics.
 - [ ] Once user sees shapes, evaluate parallax/uncalibrated depth outliers and minimum-quality gates using actual PLY geometry, test featureless/stationary negative sequence, then improve intrinsics/multi-view registration.
+
+
+## v0.6.0 — Native point-cloud viewer and 9×6 checkerboard calibration
+
+- [x] User requested point-cloud viewing directly in Android and supplied physical 9×6 INNER checkerboard corners, 10×7 squares, 25mm square pitch, 250×175mm overall, printed on US Letter Actual Size.
+- [x] v0.5.0 ALL-run ZIP verified, 10 complete capture/10 sparse-candidate results; point cloud visualization remained blocker, so 3D shape unverified.
+- [x] Built offline native XYZ/RGB Canvas viewer with touch rotate, pinch zoom, size slider, color toggle, center/focus-cluster toggle, reset.
+- [x] Added saved-run PLY selection and SAF import of exported ASCII PLY; safe bounded parser and pure-JVM tests for PLY structure/corruption/column order.
+- [x] Built opt-in OpenCV checkerboard calibration from 8–40 selected still photos (12–20 suggested): 9×6 inner corner detection, 25mm 3D reference points, candidate K+distortion/RMS, rejected-image diagnostics.
+- [x] Saved candidate calibration results without automatically changing v0.5 sparse pose/intrinsics; ALL-run ZIP includes calibration metadata and events, no photo data.
+- [x] GitHub Actions `37914986139` SUCCESS; source `837ff21901b4d88cb6cab40d934270cf7b8ab330` protected in `backup/android-v0.6.0-viewer-calibration-ci-candidate`; ARM64 APK SHA256 `5ffc06933091b4a6a648970ee756ed3b92677c965f6f5c3fa1eafe8143ed9689`, universal SHA256 `718bb8f67d9552f979bb51234f6c6032cf22bb8e962c8d2a4ee99c734e582850`.
+- [ ] Android device visual-test viewer import/saved runs, drag/pinch/point sizes/focus toggles, and confirm accurate file reading (not necessarily accurate object shape).
+- [ ] Calibrate on 12–20 varying checkerboard photos; confirm accepted count/RMS; try blurred/no-board failure and verify logging. Do not use results for sparse poses until lens/zoom and crop compatibility verified.
+- [ ] Device regression test 3 capture modes, prior ORB + sparse PLY export, and all-run diagnostic ZIP; user confirmation required for v0.6 verified baseline.
+- [ ] Later geometry: use validated camera K/distortion with camera-mode-specific image crop and relative scale; improve sparse multi-view structure, object/background segmentation and outlier rejection. Do not confuse checkerboard square mm with known reconstructed object scale from a monocular sequence.
