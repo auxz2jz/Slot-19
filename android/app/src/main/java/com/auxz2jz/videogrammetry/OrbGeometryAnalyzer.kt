@@ -131,9 +131,19 @@ class OrbGeometryAnalyzer {
             .put("maxPairs", GeometryPolicy.MAX_ANALYZED_PAIRS)
             .put("resizedMaxDimension", maxDimension)
             .put("status", "IN_PROGRESS")
-        val engineReady = OpenCVLoader.initLocal()
-        check(engineReady) { "OpenCV native library failed to initialize" }
-        val orb = ORB.create(maxFeatures)
+        val orb = try {
+            check(OpenCVLoader.initLocal()) { "OpenCV native library failed to initialize" }
+            ORB.create(maxFeatures)
+        } catch (failure: Throwable) {
+            val diagnostic = JSONObject().put("analysisId", analysisId)
+                .put("runId", run.id).put("status", "FAILED")
+                .put("errorType", failure.javaClass.simpleName)
+                .put("engine", "opencv-4.12.0")
+            File(run.directory, "geometry_last_failure.json").writeText(diagnostic.toString(2))
+            run.event("ERROR", "ORB_GEOMETRY_INIT",
+                JSONObject().put("errorType", failure.javaClass.simpleName))
+            throw IllegalStateException("OpenCV library or ORB initialization failed", failure)
+        }
         val pairs = JSONArray()
         var supported = 0
         var insufficient = 0
