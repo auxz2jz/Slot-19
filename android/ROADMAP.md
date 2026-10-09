@@ -205,3 +205,12 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] **Phone rotation must not cancel active work.** Manifest unspecified orientation + `MainActivity.onDestroy()->capture.shutdown()` and coordinator per `onCreate` explains lost current operation/UI status during Activity recreation. Add lifecycle-resilient work ownership or safe configuration-change handling with camera rebind, event/status persistence, and no falsely recorded result. Test rotation during live/Smart/video extraction, sparse PLY, third-view, object selection and checkerboard processing.
 - [ ] Keep user testing existing v0.8.1 touch-region selector uninterrupted. Avoid silently changing a tested APK. Temporary workaround: calibrate after video import, keep Auto-rotate off while running actions.
 - [ ] Later calibration-model integration still requires matching lens/zoom/crop/aspect; ordering alone cannot make checkerboard intrinsics compatible.
+
+## v0.8.1 user device validation — 2026-10-09
+- [x] 300 video frames at 5fps and 75/75 ORB pairs passed; 158 two-view PLY points; third-view 4/4 supported.
+- [x] Large-source-photo ROI selector: user drew valid boxes on BOTH, tapped Next Photo, tapped Create; phone action events and success output VERIFIED. Final focus 105 of 158 vertices retained, 53 scene points excluded; original point coordinates and colors unchanged.
+- [x] Original and focused PLY exported separately: two duplicate files each, versioned filenames, checksums validated; one latest and one ALL diagnostic ZIP both valid.
+- [x] Post-import checkerboard calibration ran twice (26/29 and 27/30 accepted), last RMS 0.225px, candidate NOT applied to incompatible 720x1280 scan. Both earlier/later PLY copies identical.
+- [ ] Calibration BEFORE video import crash unresolved; do not infer it is fixed based on successful post-import calibration.
+- [ ] Rotation cancel/reset during active analysis unresolved; preserve operation state through Activity recreation.
+- [ ] Zoom/pan/Back in ROI selector not individually confirmed. Object shape accuracy NOT established; current filtering does not create extra 3D points. Future possible redesign: select object before object-specific matching/triangulation, with scene features for camera pose.
