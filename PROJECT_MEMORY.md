@@ -9,23 +9,23 @@ Independent second photogrammetry project using live camera/video streams, impor
 **Windows-first desktop processing core (Python planned)**, with optional smartphone live feed over LAN and possible future Android UI. Architecture can run on other desktop OSes where its dependencies exist. Second platform implementation **NOT STARTED**.
 
 ## Status and version identity
-- Overall: **INITIALIZED / PLANNED**, not an implemented program.
-- Current version/build: **none**.
+- Overall: **CANDIDATE v0.1.0** — a CLI frame extraction preview is implemented; no user verification.
+- Current version/build: Python source v0.1.0; **no Windows binary, APK, or packaged installer**.
 - **LAST USER-VERIFIED BASELINE: NONE**.
-- **LATEST UNVERIFIED CANDIDATE: NONE**.
-- First candidate target: `v0.1.0` (PLANNED, NOT BUILT).
-- Commit/source hash of testable candidate: N/A.
-- Last actual test result: none.
+- **LATEST UNVERIFIED CANDIDATE: v0.1.0** — acquisition code commit `9025e96ada71a974204f0189ce0bfbe1328ede25`; GitHub CI run `37889805717` passed 6 tests.
+- First candidate target: `v0.1.0` (SOURCE EXISTS / CI-TESTED / USER-UNVERIFIED).
+- Candidate source identity: commit `9025e96ada71a974204f0189ce0bfbe1328ede25` plus subsequent documentation commits; no compiled release artifact hash.
+- Last automated test: GitHub Actions `37889805717`, Python compile PASS, six unit/integration tests PASS including synthetic recorded-video decoding, invalid media failure, guided test results and ZIP export; no physical Windows or phone-camera test.
 - Files/results received in **this** project: none. The separate Slot-8 project and its diagnostics are reference material, not this project's tests.
 
 ## Current task
 Establish permanent initialization, plan input acquisition from video/live feeds, then implement a minimal independently testable ingestion/extraction candidate with diagnostics and guided testing. Real reconstruction engines are incremental later milestones.
 
 ## Implementation plan
-1. Document source input contract, run/result status, and engine roles. **This documentation is initial checkpoint.**
-2. Create a self-contained desktop frame-extraction runner (recorded video, live streams/camera where FFmpeg source is supported), with immutable project/run inputs and source frame manifest.
-3. Add evidence-rich run diagnostics, export, and guided `Test This Version` steps that validate actual files.
-4. Test on synthetic/known recordings and faulty inputs; produce `v0.1.0` candidate, never silently claim user verification.
+1. Document source input contract, run/result status, and engine roles. **DONE.**
+2. Create Python CLI frame-extraction runner with recorded video and designed live FFmpeg camera/stream handling, fresh run directories, output/sha/PNG validation and frame manifest. **CANDIDATE; recorded-video CI-tested, live device unverified.**
+3. Add evidence-rich run diagnostics, audited ZIP export, and guided CLI `Test This Version` steps validating actual files with manual PASS/FAIL. **CANDIDATE; CI-tested.**
+4. GitHub Actions synthetic recording, faulty recording, diagnostics, guided test and source-parameter tests: **6 PASS** on CI; v0.1.0 **candidate created**. No physical user verification.
 5. Add frame quality/overlap selector, and implement genuine engine adapters one at a time with capability checks, comparably isolated runs, and validated outputs.
 
 ## Architecture and decisions
@@ -37,7 +37,7 @@ Establish permanent initialization, plan input acquisition from video/live feeds
 - Explicit status for missing engines; no fake fallbacks/results.
 
 ## Known bugs, limitations, risks
-- No software implemented yet; no bugs can be confirmed.
+- A command-line acquisition preview exists. No confirmed source bugs yet. No Windows EXE or Android APK; live RTSP/DirectShow/UVC requires device testing. Reconstructed 3D outputs are NOT implemented.
 - Video is often blurrier and more compressed than still photos; frame extraction alone cannot restore lost texture/detail.
 - Heavy engines require desktop CPU/GPU/RAM/storage; some stages depend on CUDA or platform-specific binaries.
 - Capture clocks/timestamps, motion blur, duplicate views, lens calibration and changing focus/zoom can undermine reconstruction.
@@ -49,7 +49,7 @@ Establish permanent initialization, plan input acquisition from video/live feeds
 None for this new project.
 
 ## Results and diagnostics
-No build/test, diagnostics, or benchmark results yet. Do not reuse Slot-8 success/failure results as evidence for Slot-19.
+Synthetic video and error-path tests passed under GitHub Actions `37889805717`; test run contains 6 passes, 0 skips. No Windows/user hardware or reconstruction tests. Do not reuse Slot-8 evidence.
 
 ## Exact next action
-After this documentation checkpoint, implement **only v0.1.0 frame acquisition/extraction with validated output, persistent diagnostic trace, and basic guided testing**. Do not attempt all SfM/dense engines in one untestable change.
+**User/device test of v0.1.0 is next:** install Python + FFmpeg on a Windows machine, extract frames from a short handheld video, run `test-this-version`, and review/export diagnostics. Then inspect actual evidence, resolve any camera/recorded-input failures, and plan quality-aware keyframe selection before the first COLMAP engine adapter. No unverified candidate replaces the user-verified baseline (currently NONE).
