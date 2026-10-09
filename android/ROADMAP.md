@@ -110,3 +110,11 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] CI build `37910662990` SUCCESS after fixing a single Kotlin `JSONArray.length()` call; all JVM tests and ARM64/universal APKs verified. Source `4538e52379eadcee400de9b40748144ebee9a42f` protected in `backup/android-v0.5.0-two-view-ci-candidate`; ARM64 SHA256 `fbc26f5493e823703af40cd9a6f1be8b57d7f7537bb04554903b2f69aba083d9`.
 - [ ] User tests two-view pose on a textured stationary object with actual camera translation; exports sparse PLY and diagnostics and reviews point-cloud shape. Negative case with near-stationary/featureless view must be inconclusive when appropriate.
 - [ ] Prioritize real camera calibration, lens-distortion handling, background/object features, and robust multi-view global poses plus bundle adjustment before claiming a finished 3D model.
+
+
+## v0.5 real-device follow-up and point-cloud viewer
+- [x] User exported 9 valid standalone ASCII PLY point clouds, with 24–146 points each (897 points total) and latest sparse analysis `SPARSE_CANDIDATE` (76 points), with no ERROR events and capture PASS.
+- [ ] User cannot yet view/rotate PLY files in existing Android workflow; PLY 3D shape remains visually UNVERIFIED. Preserve user-verified v0.4 capture/ORB baseline.
+- [x] Temporary standalone offline HTML interactive viewer and PNG nine-cloud overview generated in chat for immediate visual access.
+- [ ] Prioritize **Preview Sparse Points** built-in touch-enabled Android point-cloud viewer before deeper SfM; include point size, color/depth option, rotate/zoom/reset, relative unknown scale notice and related diagnostics.
+- [ ] Once user sees shapes, evaluate parallax/uncalibrated depth outliers and minimum-quality gates using actual PLY geometry, test featureless/stationary negative sequence, then improve intrinsics/multi-view registration.
