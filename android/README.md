@@ -1,45 +1,48 @@
-# Android Video 3D Capture Lab — v0.2.0
+# Android Video 3D Capture Lab — v0.3.0 CANDIDATE
 
-This is the **Android-only** implementation of Slot-19. The Windows Python/Codex project is independent and owns the historical repository root. See `../AGENTS.md`, `../windows/OWNERSHIP.md`, `../shared/`, `PROJECT_MEMORY.md`, `CHECKPOINT.md`.
+Native Kotlin/Compose camera capture application in `auxz2jz/Slot-19/android/`. Windows program separately owned; read `../windows/OWNERSHIP.md` and `../shared/`. This Android app is a **frame/photo capture research tool**: it does **not** yet compute camera poses, point clouds, meshes, textures, or laser geometry.
 
-## Download / APK build evidence
+## Tested versions and release identities
+**Last USER-VERIFIED Android CAPTURE baseline: v0.2.0**, based on user reporting all three modes work and visible extracted frames look correct. Exact source `21cc221cdd4421e3ee17c8167b970486cb38f365`, backup `backup/android-v0.2.0-user-verified-capture`, original APK SHA256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`. No 3D model/true overlap verification.
 
-**Latest Android APK is v0.2.0 CANDIDATE (not user-verified).** [GitHub Actions success](https://github.com/auxz2jz/Slot-19/actions/runs/37894898716), artifact `video3d-android-v0.2.0-candidate` (ID `11599926676`); inside: `Video3DCapture-Android-v0.2.0-CANDIDATE.apk`.
+**Latest CANDIDATE: v0.3.0**, CI test and APK build PASSED, **physical device testing pending**.
+- GitHub Actions [run 37901552835](https://github.com/auxz2jz/Slot-19/actions/runs/37901552835), artifact `video3d-android-v0.3.0-candidate` (artifact ID 11603001558).
+- APK: `Video3DCapture-Android-v0.3.0-CANDIDATE.apk`, 11,566,873 bytes.
+- APK SHA256: `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`.
+- Exact built source commit `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262`, preserved backup `backup/android-v0.3.0-ci-candidate`.
 
-- Source tested: `21cc221cdd4421e3ee17c8167b970486cb38f365`, protected as `backup/android-v0.2.0-smart-ci-candidate`.
-- SHA-256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`.
-- APK size: `11550489` bytes. Android 8+ (minSdk 26); Android SDK 35 build, debug signed.
-- Build and unit-test command: `gradle -p android :app:testDebugUnitTest :app:assembleDebug`, Gradle 8.10.2, Java 17.
-- **LAST USER-VERIFIED BASELINE: Android v0.1.0 core capture only**, preserved in `backup/android-v0.1.0-user-verified-capture`. Do not downgrade/delete it based on an untested newer candidate. If the APK cannot upgrade due to debug signing, export any desired runs BEFORE uninstalling v0.1.0; uninstall removes app-private data.
+GitHub debug APK uses an ephemeral signing key. If updating the existing app fails because it was built with a different key, **export important diagnostics before uninstalling** (app-private runs may be deleted on uninstall). If desired, keep the verified 0.2 APK as fallback. Android 8/API 26 or newer required.
 
-## Three modes (v0.2.0)
+## Capture and recommended presets
 
-1. **Start Live Sampling / Stop Live Sampling** — original fixed-interval live CameraX saved frames, up to 30; v0.1.0 user-verified behavior preserved in code.
-2. **Choose Video** — import a recording with Android system file picker and extract up to 40 frames, about 1 second apart. Now shows saved-frame preview incrementally during extraction, though video analysis itself remains fixed-interval.
-3. **Start Smart Auto Capture / Stop Smart Auto Capture** — preview camera continuously; lightweight visual scoring asks you to move to a new angle, hold steady, adjust light, or move back when image changes too much. A small progress bar estimates image-change toward another viewpoint; it is NOT a measured movement angle, reliable overlap %, or panorama coverage map. An accepted frame triggers an actual CameraX high-resolution still JPEG, not a saved preview screenshot; max 30 photos. Saved image is hash/dimensions validated in its run's manifest.
+Your three original capture modes remain:
+- **Start Live Sampling**: save regularly sampled camera frames; recommended **1 FPS** while moving phone slowly around a stationary object. Adjustable from 0.5–5 requested FPS. Default maximum 30 frames.
+- **Choose Video**: select an existing recording, extract source frames at selected requested rate; recommended **1 FPS** to start, compare **0.5, 1, 2, and 3 FPS** using the *same video*. Default maximum 40 frames; this may capture only the start of longer videos.
+- **Start Smart Auto Capture**: analyze live camera for image sharpness, lighting, stability and changed viewpoints; request full-resolution still photos when accepted. Recommended **at most 0.5 photos/sec** to allow moving between views. Its FPS slider sets the **maximum allowed shutter rate**, NOT the exact number of photos taken; no true pose/angle measurement is available yet.
 
-No 3D reconstruction, camera-pose recovery, mesh/texture, or laser scanning yet. No automatic engine has produced a 3D result.
+At top of screen, select the **Live**, **Video**, or **Smart** settings chip. Adjust:
+- FPS slider: **0.5–5.0** steps of 0.5;
+- Maximum saved frames slider: **10–300** steps of 10.
 
-## Test v0.2.0 on your phone
+Each mode keeps its own settings across app sessions. Slides/settings apply to the named mode, even if a different capture button is pressed. Requested FPS is a target; actual capture/decoder speed may be lower. High FPS or many photos can consume considerable battery, RAM, time and storage.
 
-1. First export any current tests/captures from v0.1.0; install v0.2.0 over existing app if Android accepts its debug signature. If upgrade fails, uninstall only after backing up desired app-private data.
-2. Verify old **Start Live Sampling** and **Choose Video** still work, including the new progressive preview while video frames extract.
-3. Set a textured, well-lit **stationary object** on a table and start **Smart Auto Capture**. Hold steady and see whether the first photo is saved.
-4. Keep phone in the same location for a few seconds — the app should not take a flood of identical images.
-5. Slowly move around the object to a somewhat new angle, with overlapping views. Hold steady again until the guidance reports a new photo. The progress bar is a heuristic, not an exact motion guide.
-6. Move too rapidly or use poor light to see if warnings change. Do not depend on this experiment to measure spatial object coverage.
-7. Tap **Stop Smart Auto Capture**. Check validated photo count, view last saved photo for color/orientation and ask whether image was truly full-resolution.
-8. Open **Test This Version** and select **Frames Look Correct** only for actual good results; otherwise **Expected Behavior Failed**. Tap **Export Test + Diagnostics** to save an evidence ZIP, then share it with this chat.
+## How run diagnostics work
 
-Diagnostic ZIP includes manifest/run/test and operation events, not private JPEGs/videos; a separately uploaded screenshot/photo is needed to assess actual sharpness/geometry visually. Documented ZIP export-completion trace limitation from v0.1.0 remains.
+- Every capture/import creates a new **run ID** with its own `manifest.json`, `result.json`, `events.jsonl`, actual saved JPEG files, and optional `test_results.json`.
+- New runs **do not overwrite** older runs. These are stored within app-private space; uninstall or clearing app data may delete them.
+- `Export Test + Diagnostics` exports **only the latest run** (no raw frames/video).
+- **Export ALL Runs + FPS Comparison** exports the metadata/logs for **all completed runs**, plus `all_runs_summary.json`; the ZIP excludes camera photos and private source videos.
+- Each new v0.3 run records requested FPS, the measured spacing of accepted frames in their source timeline, actual frame count, processing time, saved bytes, and simple brightness/sharpness/near-duplicate appearance proxies where available. This is useful for debugging and controlled comparison but does not prove which settings will produce the best 3D model.
+- The rolling global action log rotates when large; per-run logs remain separate until app-data removal.
+- Known diagnostic limitation: a ZIP may not contain its own final `EXPORT_RESULT` because that event is appended after ZIP completion.
 
-## Developer map
-- `app/src/main/java/com/auxz2jz/videogrammetry/MainActivity.kt` — Compose screen, CameraX binding and three modes.
-- `SmartFrameSelector.kt` — experimental grayscale image quality/view-change logic (no measured pose).
-- `ScanRepository.kt` — frame/JPEG validation, hashing, reports, diagnosis, testing, export.
-- `FramePolicy.kt` — v0.1 fixed-interval behavior preserved.
-- `app/src/test/.../SmartFrameSelectorTest.kt` and `FramePolicyTest.kt` — JVM policy regression tests.
-- `SMART_CAPTURE_DESIGN.md`, `CHECKPOINT.md`, `PROJECT_MEMORY.md`, `ROADMAP.md` — enduring design, builds, last verified baseline and exact next action.
-- `history/` — archived earlier checkpoint evidence.
+## Suggested guided test
 
-**Windows source remains untouched by Android development.**
+1. Verify all three capture buttons still work after installing v0.3.0. Check saved frames and preview.
+2. Select **Video** settings, adjust to **1 FPS** with **100 max frames**, import a short ~30-second recorded clip. Run the same source again at **2 FPS**, then **3 FPS**, keeping 100-frame cap and identical source; compare saved counts, preview and any blur, and output diagnostics. Also try **0.5 FPS** if desired.
+3. Try **Live** at 1 and 2 FPS; the observed accepted/saved rate may differ due to camera, JPEG encoding and device performance.
+4. Try **Smart** with default 0.5 max shutter FPS; hold the phone steady then change to a new overlapping angle. Examine full-resolution photo quality. Increasing its cap doesn't override the novel-view gate.
+5. Select **Test This Version** and record honest manual PASS or **Expected Behavior Failed**.
+6. Export **ALL Runs + FPS Comparison**, verify ZIP opens, and upload it back with your observations. This is the best evidence for comparing sampled rates.
+
+See `CHECKPOINT.md`, `PROJECT_MEMORY.md`, `ROADMAP.md`, `CAPTURE_RATE_TEST_PLAN.md` and `DIAGNOSTICS_AND_TESTING.md` for development handoff. Windows/Codex must only touch its owned historical root Python source.
