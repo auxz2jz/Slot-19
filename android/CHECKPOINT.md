@@ -19,7 +19,7 @@ Updated 2026-10-09 UTC (2026-10-08 PDT user session). **Platform: Android only.*
 - Comparison recommended: reprocess one identical 30-second recording at 0.5 / 1 / 2 / 3 FPS with maxFrames sufficient for equal temporal coverage (e.g., 100 for all). Measure spacing, images, blur/edge proxy, duplicates, bytes and processing time. Higher FPS is not automatically better.
 
 ## Diagnostic/test and known limitations
-- New `CaptureOptionsTest.kt` verifies valid bounds and measured source FPS; `SmartFrameSelectorTest.kt` and legacy frame tests retained. Android GitHub Actions build run `37901552835` initiated by merge; status must be checked, do not infer PASS before it completes.
+- New `CaptureOptionsTest.kt` verifies valid bounds and measured source FPS; `SmartFrameSelectorTest.kt` and legacy frame tests retained. CI run `37901552835` COMPLETED SUCCESS with Android JVM unit tests and debug APK compilation.
 - Actual camera frame rate and Android MediaMetadataRetriever seek accuracy depend on hardware/decoder. Requested FPS is a target; measured FPS reflects **selected source timestamps**, not importer compute speed.
 - Smart full-res photos may use significant storage; 300 is a safety cap, not a claim that 300 are optimal. The smart heuristic does not reconstruct camera poses; exact panorama angle/overlap guidance is deferred.
 - Diagnostic ZIP export may lack its own post-close `EXPORT_RESULT` event; a known observability issue, not necessarily export failure.
@@ -32,3 +32,12 @@ Updated 2026-10-09 UTC (2026-10-08 PDT user session). **Platform: Android only.*
 3. User installs APK, tests all 3 modes plus FPS sliders on video/live and smart maximum rate, verifies saved count and saved-frame display.
 4. User exports **ALL Runs + FPS Comparison** and reports visual results at different rates, including photo quality.
 5. Only after explicit user confirmation promote v0.3.0 to user-verified capture baseline. Preserve verified v0.2.0 fallback.
+
+## v0.3.0 reproducible APK result
+
+- Exact tested source commit: `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` (Android-only PR #1 merged). Candidate backup branch `backup/android-v0.3.0-ci-candidate` points to this source.
+- GitHub Actions `37901552835`: **COMPLETED SUCCESS** (unit tests and Android debug build). Artifact `video3d-android-v0.3.0-candidate`, artifact ID `11603001558`.
+- APK `Video3DCapture-Android-v0.3.0-CANDIDATE.apk`, 11,566,873 bytes. SHA256 `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`. Retrieved ZIP checked for integrity and APK hash compared with the embedded `SHA256SUMS.txt`: PASS.
+- v0.3.0 is **NOT USER-VERIFIED**. GitHub compile/JVM tests do not guarantee user-device CameraX FPS, decoding throughput or settings behavior. Historical v0.2.0 user-verified capture fallback preserved.
+- CLI/source note: Android code in `android/`; pre-existing Windows Python files intentionally unaffected.
+- User next: install v0.3.0; check all three modes and slider values; for one prerecorded video try 0.5, 1, 2, 3 FPS and enough frames to cover equal time; then use Export ALL Runs + FPS Comparison. Share ZIP and impressions. Missing exact device-independent `best` rate remains a test/reconstruction question, not an automatic conclusion.
