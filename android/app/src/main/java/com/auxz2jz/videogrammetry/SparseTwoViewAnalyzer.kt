@@ -160,7 +160,7 @@ class SparseTwoViewAnalyzer {
             P1points.fromList(coords1)
             P2points.fromList(coords2)
             E=Calib3d.findEssentialMat(P1points,P2points,K,
-                Calib3d.RANSAC,0.999,1.5,EMask)
+                Calib3d.RANSAC,0.999,1.5,1000,EMask)
             if (E.empty() || E.rows()!=3 || E.cols()!=3) {
                 return Candidate(report.put("verdict","ESSENTIAL_MATRIX_NOT_UNIQUE"),emptyList(),0.0)
             }
