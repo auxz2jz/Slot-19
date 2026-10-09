@@ -40,3 +40,26 @@ Event file: `capture_runs/<run-id>/events.jsonl`; persistent bounded trace `diag
 
 ## Failure correction
 Read run result -> first abnormal `events.jsonl` event -> error type / failing frame -> minimally scoped correction -> targeted CI build -> physical user retest. If essentially identical approach fails twice, STOP and reassess; follow three-failure escalation. No candidate becomes a verified baseline merely by successful APK build.
+
+## v0.2.0 candidate addendum — Third mode Smart Auto Capture
+
+This section supersedes v0.1.0-only labels above. Candidate source `21cc221cdd4421e3ee17c8167b970486cb38f365`; GitHub Actions `37894898716` SUCCESS; user device test PENDING. Last physically user-verified capture baseline is **v0.1.0**, which the user reported working for live and imported-video preview.
+
+### Additional actual UI
+- `Start Smart Auto Capture`, `Stop Smart Auto Capture`, approximate progress bar and free-text image quality / next-view guidance.
+- These are additive to `Start Live Sampling`, `Stop Live Sampling`, `Choose Video`, `Test This Version`, `Frames Look Correct`, `Expected Behavior Failed`, and `Export Test + Diagnostics`.
+- During recorded-video extraction, latest saved JPEG preview updates after first/every five extracted frames.
+
+### Diagnostic coverage (new real code)
+
+| Operation | User action or automatic trigger | Actual success condition | Failure / warning | Guided device check |
+|---|---|---|---|---|
+| Smart availability | bind optional CameraX ImageCapture use case | ImageCapture is bound without breaking v0.1 Preview/ImageAnalysis | third use-case unavailable; button disabled, original modes must remain | try all three modes |
+| Smart run start | tap Start Smart Auto Capture | new non-overwriting run, `USER_ACTION` + `OPERATION_START` logged | another active mode/permission issue | start; inspect state |
+| Analyze preview | periodic 64x48 raw RGBA sampling | score luminance, edge sharpness proxy, motion and image novelty | `FRAME_DECISION` with `TOO_DARK`, `TOO_BRIGHT`, `SOFT_IMAGE`, `CAMERA_MOVING`, `COOLDOWN`, `SAME_VIEW`, `POSSIBLE_LOST_OVERLAP`, `READY` when reason changes | stationary, slow move/hold, bad light |
+| Automatic shutter | selector READY + no photo in flight | CameraX ImageCapture JPEG is physically saved, decodes, has positive dimensions and length; hash/metadata in manifest | `SMART_SHUTTER` / `SMART_IMAGE_CAPTURE_VALIDATE` error; run cannot pass if shutter error | confirm saved count and full-res dimensions |
+| Stop/limit | Stop Smart Auto Capture or 30 photos | complete run `OUTPUT_VALIDATION` / `OPERATION_RESULT` with actual saved/verified JPEGs | if 0 frames or any capture error, FAIL | stop/review |
+| Guided test / diagnostic ZIP | existing Test This Version buttons | objective output validity AND user's manual visual confirmation; ZIP readable, no raw JPGs/video included | explicit manual FAIL; ZIP self-export-completion event may not be included | export and upload ZIP |
+
+### Limitations
+No true geometric overlap verification or orientation/translation estimate. A progress bar does not establish 3D scene coverage. The CameraX full-resolution still and EXIF orientation must be physically reviewed. GitHub's JVM selector tests do not verify real camera sensor behavior. The known v0.1.0 diagnostics ZIP completion-event limitation remains. Tune thresholds only from measured runs; preserve last verified v0.1.0 source. See `CHECKPOINT.md` for exact build/recovery record.
