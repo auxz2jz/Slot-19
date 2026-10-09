@@ -585,7 +585,7 @@ class SparseTwoViewAnalyzer {
             .put("warning","Points re-detected within object boxes BEFORE triangulation. Separate estimated two-view pose; backgrounds inside boxes can pass. No mesh, true scale, bundle adjustment or globally shared coordinates.")
         run.event("OPERATION_START","EARLY_OBJECT_FOCUS",
             JSONObject().put("operationId",id).put("sourceFrameB",actual.second))
-        val focusFile=File(run.directory,"sparse_object_focus.ply")
+        val focusFile=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY)
         try {
             check(OpenCVLoader.initLocal()) { "OpenCV initialization failed" }
             val orb=ORB.create(2400)
@@ -616,14 +616,14 @@ class SparseTwoViewAnalyzer {
             if(points.isEmpty()) {
                 focusFile.delete()
             } else {
-                val tmp=File(run.directory,"sparse_object_focus.ply.tmp")
+                val tmp=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY+".tmp")
                 tmp.writeText(SparsePolicy.asciiPly(points))
                 check(tmp.length()>150) { "Object-priority PLY empty" }
                 check(tmp.renameTo(focusFile)) { "Failed finalizing object-priority PLY" }
             }
-            val tmp=File(run.directory,"object_focus_report.json.tmp")
+            val tmp=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_REPORT+".tmp")
             tmp.writeText(report.toString(2))
-            check(tmp.renameTo(File(run.directory,"object_focus_report.json")))
+            check(tmp.renameTo(File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_REPORT)))
             run.event("ANALYSIS_RESULT","EARLY_OBJECT_FOCUS",
                 JSONObject().put("operationId",id)
                     .put("status",report.optString("status"))
@@ -632,7 +632,7 @@ class SparseTwoViewAnalyzer {
             return report
         } catch(ex:Exception) {
             report.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
-            File(run.directory,"object_focus_last_failure.json")
+            File(run.directory,"early_object_reconstruction_last_failure.json")
                 .writeText(report.toString(2))
             run.event("ERROR","EARLY_OBJECT_FOCUS",
                 JSONObject().put("operationId",id)
