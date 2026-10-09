@@ -764,6 +764,16 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Low-volume, privacy-safe trace for the step-by-step photo selector. */
+    fun logObjectFocusUi(action: String, step: Int) {
+        if(action in setOf("DRAW_VALID","DRAW_INVALID","NEXT_PHOTO",
+                "BACK_PHOTO","ZOOM_IN","ZOOM_OUT","MODE_DRAW",
+                "MODE_MOVE","RESET_VIEW","CREATE_REQUEST")) {
+            currentRun?.event("USER_ACTION","OBJECT_FOCUS_UI_"+action,
+                JSONObject().put("photoNumber",step))
+        }
+    }
+
     /** Real selected source pair photos, from saved sparse analysis. */
     fun objectFocusSourcePhotos(): Pair<File,File>? {
         if (objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
@@ -1321,6 +1331,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         ObjectFocusDialog(
             photos=photos,
             onDismiss={focusPhotos=null},
+            onUiEvent={action,photoNumber ->
+                coordinator.logObjectFocusUi(action,photoNumber)
+            },
             onConfirm={first,second ->
                 focusPhotos=null
                 coordinator.applyObjectFocus(first,second)
