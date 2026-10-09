@@ -465,6 +465,33 @@ class SparseTwoViewAnalyzer {
                 temp.writeText(ply)
                 check(temp.length()>150) { "Candidate PLY empty" }
                 check(temp.renameTo(existingCloud)) { "Cannot finalize candidate PLY" }
+                check(winner.projections.size==winner.vertices.size) {
+                    "Projected vertex list does not match PLY"
+                }
+                val coordinates=JSONArray()
+                for((i,projection) in winner.projections.withIndex()) {
+                    coordinates.put(JSONObject().put("pointIndex",i)
+                        .put("firstX",projection.firstX).put("firstY",projection.firstY)
+                        .put("secondX",projection.secondX).put("secondY",projection.secondY))
+                }
+                val fingerprint=MessageDigest.getInstance("SHA-256")
+                    .digest(ply.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it.toInt() and 255) }
+                val projectionJson=JSONObject().put("schemaVersion",1)
+                    .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+                    .put("runId",run.id).put("analysisId",id)
+                    .put("sourcePair",JSONArray().put(0).put(winner.report.getInt("indexB")))
+                    .put("widthA",winner.widthA).put("heightA",winner.heightA)
+                    .put("widthB",winner.widthB).put("heightB",winner.heightB)
+                    .put("pointCount",winner.vertices.size).put("plySha256",fingerprint)
+                    .put("projections",coordinates)
+                val projectionTmp=File(run.directory,"sparse_point_projections.json.tmp")
+                projectionTmp.writeText(projectionJson.toString(2))
+                check(projectionTmp.renameTo(File(run.directory,"sparse_point_projections.json")))
+                for(name in listOf("sparse_object_focus.ply","object_focus_report.json",
+                    "object_focus_selection.json","object_focus_last_failure.json"))
+                    File(run.directory,name).delete()
+                report.put("objectFocusProjectionMapAvailable",true)
                 report.put("selectedPair",winner.report)
                     .put("pointCount",winner.vertices.size)
                     .put("status","SPARSE_CANDIDATE")
