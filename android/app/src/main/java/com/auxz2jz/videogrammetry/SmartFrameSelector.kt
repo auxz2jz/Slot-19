@@ -82,7 +82,7 @@ class SmartFrameSelector {
         lastCaptureMs = Long.MIN_VALUE
     }
 
-    fun decide(candidate: SmartSignature, timeMs: Long): SmartDecision {
+    fun decide(candidate: SmartSignature, timeMs: Long, minimumGapMs: Long = MIN_GAP_MS): SmartDecision {
         val instability = previous?.let { imageChange(it, candidate) } ?: 0.0
         val novelty = accepted?.let { imageChange(it, candidate) } ?: 0.0
         previous = candidate
@@ -98,7 +98,7 @@ class SmartFrameSelector {
         if (candidate.meanEdgeStrength < 7.0) return output(false, "SOFT_IMAGE", "Focus / show more detail")
         if (instability > 0.10) return output(false, "CAMERA_MOVING", "Move slower, then hold steady")
         if (accepted != null && lastCaptureMs != Long.MIN_VALUE &&
-            timeMs - lastCaptureMs < MIN_GAP_MS)
+            timeMs - lastCaptureMs < minimumGapMs)
             return output(false, "COOLDOWN", "Photo saved — move toward the next angle")
         if (accepted != null && novelty < 0.07)
             return output(false, "SAME_VIEW", "Move to a new angle around the object")
