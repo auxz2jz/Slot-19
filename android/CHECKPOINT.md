@@ -1,77 +1,37 @@
-# Android recovery checkpoint — v0.3.0 adjustable FPS and cross-run diagnostics
+# Android recovery checkpoint — v0.4.0 ORB geometric pair analysis
 
-Updated 2026-10-09 UTC (2026-10-08 PDT user session). **Platform: Android only.**
+Date 2026-10-09. Current source of truth for Android only; historical v0.3.0 user device findings archived at `android/history/ANDROID_V0.3.0_FPS_DEVICE_REPORT.md`. Windows original Python code in Slot-19 and all Slot-8 files are OUT OF SCOPE and remain unchanged.
 
-## Verified capture baseline (preserve)
-- **LAST USER-VERIFIED CAPTURE BASELINE: Android v0.2.0**, limited to the three capture modes and visible saved-frame behavior, as explicitly reported by user. This is NOT verified photogrammetry reconstruction, accurate image overlap, or validated automatic keyframe quality.
-- User statement: *“I tested all three methods ... frames change when they're being analyzed ... everything looks fine.”*
-- User-uploaded `Android-v0.2.0-test-diagnostics.zip` recorded-video run `20261009T074031Z_c87a7f9c-2`: 40/40 frames, 720×1280, requested 0–39s (1 FPS), app validation PASS, manual `FRAMES_LOOK_CORRECT` PASS, zero errors; valid diagnostic ZIP. It contains only the most recent run.
-- Source commit `21cc221cdd4421e3ee17c8167b970486cb38f365`; backup branch `backup/android-v0.2.0-user-verified-capture` and `backup/android-v0.2.0-smart-ci-candidate`.
-- CI for verified version: run `37894898716` SUCCESS. APK SHA256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`. Older v0.1.0 baseline source retained separately.
-- Exact Windows historical code, root checkpoint, and `auxz2jz/Slot-8` have not been modified by this feature.
+## LAST USER-VERIFIED ANDROID CAPTURE BASELINE — v0.3.0
+User explicitly confirmed 2026-10-09: “Yes everything looked fine let's go ahead with the next step”, answering whether images, Smart Auto photos and adjustable FPS sliders behaved as expected. This establishes **Android v0.3.0 as user verified for its three capture/display workflows, adjustable rate/limit settings and all-run export**, not actual SfM, reconstructed 3D geometry, or any scientifically established optimum FPS.
+- **Exact tested source:** `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262`.
+- **Preservation branch:** `backup/android-v0.3.0-user-verified-capture`. Existing `backup/android-v0.3.0-ci-candidate` preserved too.
+- **APK SHA256:** `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`.
+- **CI:** Android Actions run `37901552835` SUCCESS, artifact `video3d-android-v0.3.0-candidate`, ID `11603001558`.
+- **Real device data:** two ZIPs; all-run ZIP has 9 PASS-valid completed sessions, 549 frames, 267,721,254 bytes, live/video/smart modes, no logged errors. User says all three capture methods and frames look good. Exact details and limitations archived in v0.3 history.
+- **Older good versions:** v0.2.0 `backup/android-v0.2.0-user-verified-capture`; v0.1.0 own branch.
 
-## New Android candidate v0.3.0 (NOT USER-VERIFIED)
-- Source merge commit `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` (PR #1), `versionCode=3`, `versionName=0.3.0`.
-- Three independent, persistent mode-specific settings accessible via `Live`, `Video`, `Smart` chips. FPS slider 0.5–5.0 in 0.5 increments; total frames slider 10–300 in 10 increments. Default Live 1 FPS/30; Video 1 FPS/40; Smart cap 0.5 photos/sec/30. Smart uses the rate only as a minimum time between eligible full-resolution photos, still checking quality and novelty.
-- Existing `Start Live Sampling`, `Choose Video` and `Start Smart Auto Capture` retained. Video extraction updates displayed frame periodically. A new `Export ALL Runs + FPS Comparison` exports all completed runs' metadata/results/events/tests into one ZIP, no source videos/photos.
-- Each new run records requested FPS/max frames, actual sampled interval from saved source times, output file count/bytes, elapsed processing, mean thumbnail sharpness/brightness proxy where available, estimated adjacent duplicates in fixed-interval modes, and smart image-change/proxy metrics. **These are not proof of geometric reconstruction quality; no ORB pose/point clouds/mesh yet.**
-- Global event trace is bounded/rotating; individual per-run reports persist separately in app-private storage. A normal `Export Test + Diagnostics` creates a ZIP for the latest run ONLY. `Export ALL Runs` produces cross-run report collection. Uninstalling app may delete runs.
-- Comparison recommended: reprocess one identical 30-second recording at 0.5 / 1 / 2 / 3 FPS with maxFrames sufficient for equal temporal coverage (e.g., 100 for all). Measure spacing, images, blur/edge proxy, duplicates, bytes and processing time. Higher FPS is not automatically better.
+## LATEST CANDIDATE — v0.4.0 (UNVERIFIED)
+- Android-only PR #2 merged to main at **`4503a4cf9c40a8709fd13b009a766901545aff40`**. GitHub Actions run **`37905706664`** queued/in progress; DO NOT claim SUCCESS until checked.
+- New dependency `org.opencv:opencv:4.12.0` (official Android AAR, Apache 2.0). New opt-in **Analyze Latest Run — ORB Geometry** after any completed capture.
+- `OrbGeometryAnalyzer.kt`: downsampled (max 640 pixel edge) actual saved frame JPEGs -> ORB keypoints/descriptors (~800) -> BFMatcher/Hamming 0.75 ratio -> fundamental-matrix RANSAC (1.5px at resized scale, confidence 0.99), count inliers and per-pair verdict.
+- `GeometryPolicy.kt` and JVM `GeometryPolicyTest.kt`: strict support thresholds (>=12 ratio matches/inliers, >=30% matched RANSAC inliers) and max 80 sampled pair comparisons with full first/last coverage. Every pair report includes keypoint/match/inlier counts. The ORB feature matcher is REAL; it does NOT measure true object-only overlap, recover metric camera position, solve bundle adjustment, or generate a point cloud/mesh.
+- Run-local **`geometry_report.json`** and **`geometry_pairs.jsonl`** persisted separately from existing capture manifest/result and JPEGs. OpenCV init failure stored as `geometry_last_failure.json`, and diagnostic events/visible error status. Existing single-run and all-run ZIPs include these geometry reports, not image data. Runs without analysis report no geometry.
+- Capturing video, live, or Smart works exactly as before, unaffected by analysis confidence; geometry processing starts ONLY by user tapping button on completed capture. Dedicated analysis executor prevents blocking camera preview. Geometry analysis can be computationally heavy, and OpenCV runtime load requires real device testing.
+- Candidate source has not been user/device verified and should never displace v0.3.0 baseline if it fails.
 
-## Diagnostic/test and known limitations
-- New `CaptureOptionsTest.kt` verifies valid bounds and measured source FPS; `SmartFrameSelectorTest.kt` and legacy frame tests retained. CI run `37901552835` COMPLETED SUCCESS with Android JVM unit tests and debug APK compilation.
-- Actual camera frame rate and Android MediaMetadataRetriever seek accuracy depend on hardware/decoder. Requested FPS is a target; measured FPS reflects **selected source timestamps**, not importer compute speed.
-- Smart full-res photos may use significant storage; 300 is a safety cap, not a claim that 300 are optimal. The smart heuristic does not reconstruct camera poses; exact panorama angle/overlap guidance is deferred.
-- Diagnostic ZIP export may lack its own post-close `EXPORT_RESULT` event; a known observability issue, not necessarily export failure.
-- `app/src/main/java/.../ScanRepository.kt` logs per-run data but main screen only displays the latest frame and latest single-run report. All-run ZIP enables comparison without deleting old runs.
-- The submitted ZIP contains no photos, so true camera framing/sharpness of those source images cannot be independently inspected here.
+## Known risks and expected limits
+- Official OpenCV AAR bundles native libraries and may significantly increase APK size.
+- Low textured objects, repetitive patterns, reflective surfaces, low parallax, strong backgrounds, and pure camera rotation can give inconclusive or misleading epipolar metrics. A high inlier count on background is not the same as verified object coverage.
+- Camera intrinsics, true geometric registration, epipolar degeneracy screening, image sharpness/fps optimization, stereo triangulation and dense 3D reconstruction are future work. No automated “best FPS” claim yet.
+- JPEG smart-mode EXIF orientation is not explicitly normalized before feature analysis. If saved Smart stills rotate unexpectedly, return diagnostics and compare real frames, do not guess.
+- Historical ZIP exporter may omit its own post-write EXPORT_RESULT event. No image bytes in diagnostic ZIP, only redacted per-run metrics.
+- APK debug signing keys may differ. Before uninstalling a previously installed version, export diagnostics and any app-private data needed; uninstall may remove capture runs.
 
-## Exact next action
-1. Confirm new v0.3.0 GitHub Actions completed with Android compile, JVM tests and APK artifact; inspect failures and fix only targeted causes if any.
-2. Record exact compiled source commit, artifact hash, backup candidate branch and ensure Windows code unaffected.
-3. User installs APK, tests all 3 modes plus FPS sliders on video/live and smart maximum rate, verifies saved count and saved-frame display.
-4. User exports **ALL Runs + FPS Comparison** and reports visual results at different rates, including photo quality.
-5. Only after explicit user confirmation promote v0.3.0 to user-verified capture baseline. Preserve verified v0.2.0 fallback.
+## Required next action
+1. Check GitHub Actions run `37905706664` for compile/JVM tests and APK. On failure, diagnose FIRST ACTUAL compiler/dependency error and patch ONLY Android-owned source. Stop repeated failed approaches per Master Library.
+2. If successful, record exact source SHA, artifact ID, APK SHA256 and backup source branch. Verify unchanged Windows file blob SHAs.
+3. User installs v0.4.0; test all three capture modes still work, then ORB analysis on saved frames; run a textured object and a near-identical/featureless set, inspect status and report, export ALL Runs ZIP.
+4. Only after explicit user visual and function confirmation mark v0.4 as verified. Preserve 0.3 backup; then choose geometry-aware capture tuning, camera pose/intrinsic calibration and eventual triangulation.
 
-## v0.3.0 reproducible APK result
-
-- Exact tested source commit: `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` (Android-only PR #1 merged). Candidate backup branch `backup/android-v0.3.0-ci-candidate` points to this source.
-- GitHub Actions `37901552835`: **COMPLETED SUCCESS** (unit tests and Android debug build). Artifact `video3d-android-v0.3.0-candidate`, artifact ID `11603001558`.
-- APK `Video3DCapture-Android-v0.3.0-CANDIDATE.apk`, 11,566,873 bytes. SHA256 `51f5629305332b67a763f9007332fe96fc8fe285d1ab0b892c4cbafc87d01938`. Retrieved ZIP checked for integrity and APK hash compared with the embedded `SHA256SUMS.txt`: PASS.
-- v0.3.0 is **NOT USER-VERIFIED**. GitHub compile/JVM tests do not guarantee user-device CameraX FPS, decoding throughput or settings behavior. Historical v0.2.0 user-verified capture fallback preserved.
-- CLI/source note: Android code in `android/`; pre-existing Windows Python files intentionally unaffected.
-- User next: install v0.3.0; check all three modes and slider values; for one prerecorded video try 0.5, 1, 2, 3 FPS and enough frames to cover equal time; then use Export ALL Runs + FPS Comparison. Share ZIP and impressions. Missing exact device-independent `best` rate remains a test/reconstruction question, not an automatic conclusion.
-
-
-## v0.3.0 user-submitted device diagnostics — 9-run comparison (received October 2026)
-
-**Exact inputs:** `Android-v0.3.0-last-run-diagnostics.zip` (ZIP SHA256 `568e547bd3a3c5173278715fbd73f2dc5e45470461c324e59bc567fb3770edf3`); `Android-v0.3.0-ALL-run-comparison.zip` (ZIP SHA256 `a2b16e454229c100c200682c26a33e32bee8e212af1dcc64289a1bd6cbe18c75`). Both ZIPs passed integrity checks. All-run ZIP contains `all_runs_summary.json` and per-run manifest/result/events; 9 distinct completed runs, 549 saved frames, 267,721,254 bytes (approximately 267.72 decimal MB) of app-reported output JPEGs. These files are diagnostics only: **no original JPEG image bytes or video samples to independently verify real visual quality**.
-
-**Mode breakdown:** three `live_camera` runs, four `recorded_video` runs, two `smart_auto` runs. All 9 `result.json` status PASS with `outputValidated=true`; zero `ERROR` diagnostic events. No `test_results.json` manual guided PASS is present for the new v0.3 runs: **v0.3 remains device-tested automatically PASS but not user-confirmed VERIFIED**. Last-run ZIP refers to final smart run `20261009T081550Z_a52f8cfd-4`, also present in all-run ZIP. Latest-run events contains 2 additional export events relative to earlier all-run snapshot, not a failed capture.
-
-### Tested configurations and actual observations
-
-| UTC-based run ID suffix | Mode | FPS requested | Frame cap | Saved | Rate measured by app | Pixel-proxy near duplicate pairs | Saved MB | Elapsed processing s |
-|---|---|---:|---:|---:|---:|---:|---:|---:|
-| `43d069bd-b` | Live | 1 | 30 | 30 | 0.981 | 0 of 29 | 5.61 | 29.71 |
-| `e65f249b-9` | Smart | 0.5 shutter cap | 30 | 30 | 0.437 accepted/s | not measured | 109.30 | 70.01 |
-| `e58b860d-1` | Video | 1 | 40 | 40 | 1.000 nominal source spacing | 0 of 39 | 4.88 | 10.67 |
-| `19e1b7df-1` | Video | 3 | 40 | 40 | 3.003 nominal | 1 of 39 | 4.81 | 8.36 |
-| `d613cadf-3` | Video | 3 | 170 | 152 | 3.003 nominal | 9 of 151 | 18.05 | 30.63 |
-| `57d2ab79-e` | Video | 5 | 170 | 170 | 5.000 nominal | 59 of 169 | 20.37 | 34.04 |
-| `6a42f5c8-a` | Live | 1 | 30 | 7 (manual stop) | 0.986 | 0 of 6 | 1.48 | 6.33 |
-| `b210e655-a` | Live | 2 | 50 | 50 | 1.946 | 0 of 49 | 10.21 | 25.35 |
-| `a52f8cfd-4` | Smart | 1 shutter cap | 30 | 30 | 0.731 accepted/s | not measured | 93.02 | 40.38 |
-
-Live JPEGs 1088x1088; recorded-video JPEGs 720x1280; smart CameraX still JPEGs 4000x3000. All saved image SHA values are unique within their runs; near-duplicate proxy means visually similar pixels, not byte-identical images. Smart auto decisions included READY, COOLDOWN, CAMERA_MOVING, and one TOO_DARK / two SAME_VIEW events in the 0.5 max shutter run, no shutter errors.
-
-### Comparison caveats and evidence-based recommendations
-- Important diagnostics semantics bug/gap: for imported video `measuredFps` is derived from **requested `sourceTimeMs` values**, not independently measured decoded presentation times; 3.003/5.000 values are nominal requested spacing by construction, **not evidence that the decoder can decode frames that quickly**. `processingElapsedMs` and frameCount allow observing actual throughput separately (roughly 4–5 JPEGs/second on these video imports). In a future version, label this clearly as requested sampling cadence and report actual throughput and optical near-duplicate rate separately.
-- Comparing video rates with a common first 33.8 seconds: 1 FPS had 0/33 adjacent near-duplicate-proxy pairs, 3 FPS (longer run) had approximately 6/101 (~5.9%), 5 FPS had 59/169 (~34.9%). Even these are rough small-thumbnail differences, NOT RANSAC verified geometric correspondence. **5 FPS produces many more visually-similar adjacent images than 3 FPS in this footage**, but 3 FPS is not yet proven to give best reconstruction quality.
-- Unequal frame caps/time windows invalidate naive full-run comparisons: 3 FPS at cap 40 covers 12.987s; 3 FPS at 170 cap covers 50.283s; 5 FPS at cap 170 covers 33.800s; 1 FPS at cap 40 covers 39s. Match source-duration windows in future tests.
-- Recommend **1 FPS as economical default** on this footage; **3 FPS as higher-coverage experiment**; 5 FPS is an experimental upper bound not automatically beneficial; Smart 0.5–1 max shutter FPS depends on actual view changes and is not directly comparable.
-- Large Smart full-resolution JPEGs: 30 images occupied ~93–109 MB; a maximum of 300 could consume ~1 GB if similarly sized. Retain cap warning.
-- No saved source-video filename/hash or independent decoded timestamp; source identity cannot be fully proven from report alone (overlapping frame hashes suggest some tests reuse the same recording). Compare the same original video with equal temporal coverage whenever possible.
-- Neither JPEG validity nor visual-change proxies validates useful 3D features, overlap, pose, or resulting 3D mesh. Plan feature matching/geometric verification before implementing an automatic **best FPS** recommendation.
-
-**Verified baseline decision:** no promotion without user's explicit v0.3 visual confirmation. Preserve verified v0.2.0 source and v0.3 candidate build separately. Next: ask user if higher-rate preview/photos look good; if yes, record v0.3 as verified for capture/settings/export scope only. Then prioritize fixing FPS diagnostic labeling, smarter per-frame preview/selection and true feature-based overlap comparisons. No Windows source modification authorized or needed.
+See `android/ORB_GEOMETRY_PLAN.md`, `android/PROJECT_MEMORY.md`, `android/ROADMAP.md` and `android/DIAGNOSTICS_AND_TESTING.md`; observe global `AGENTS.md` and canonical `auxz2jz/master-instruction-library`.
