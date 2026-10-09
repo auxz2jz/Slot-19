@@ -224,3 +224,13 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [x] Build app v0.9.0 preview side-by-side (`applicationIdSuffix=.preview090`) to protect v0.8.1 app-private frame archives from ephemeral debug signing/uninstall.
 - [ ] GitHub latest compile/tests & APK SHA verification, source recovery snapshot and phone tests.
 - [ ] User must confirm calibration-first no crash, rotation workflow survives, object-first PLY is nonempty or meaningfully inconclusive with saved diagnostics, legacy selection/third view unaffected. Distinguish one UI pass from verified geometric quality.
+
+
+## 2026-10-09 — v0.9.0 uploaded device test: prioritize dual object-model preservation
+- [x] 300 recorded video frames at 5 FPS PASS; scene sparse 158 XYZ points; third view consistency 4/4; full-scene PLY export verified. Six diagnostic ZIPs integrity PASS.
+- [x] Ordinary orientation change portrait→landscape→portrait DURING video import retained same run/session and ultimately PASS with 300 frames. Other workflow rotations still device test pending.
+- [x] ROI marked BEFORE analysis in both photos; independent masked-ORB object reconstruction completed **261 ROI-priority 3D points** on first attempt, **249 points** second attempt; counts from `EARLY_OBJECT_FOCUS` events. Unknown scale and separate coordinate frame; object visual shape not verified.
+- [ ] **BUG: legacy post-analysis object filter overwrites early independently reconstructed object PLY and report** because both save `sparse_object_focus.ply` + `object_focus_report.json`. First early 261 replaced by subset 56, later early 249 replaced by subset 38. User exported 56-point legacy subset, NOT the early 261-point model. Separate into two distinct persistent PLY/report artifacts, separately selectable/exportable, and test that old and new cannot overwrite each other; clearly label all cloud origins in the viewer.
+- [x] Successful after-import calibration 26/29 accepted, RMS .22684px at 1000x467; 1-photo attempt rejected with caught IllegalArgumentException, not app crash. Calibrated intrinsics correctly excluded from 720x1280 scan.
+- [ ] **Calibration-before-import crash still untested**; no evidence of first-calibration-with-zero-videos attempt in these reports. Need fresh preview app and 8–40 board photos, export calibration-only ZIP before video.
+- [ ] Verify shape quality visually on separately exported early object PLY after output collision fix; do not call number of points geometric improvement until user confirms target object recognition.
