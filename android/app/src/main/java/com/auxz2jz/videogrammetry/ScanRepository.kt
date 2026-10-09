@@ -19,6 +19,9 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+data class SavedPlyEntry(val runId: String, val sourceKind: String,
+    val file: File, val points: Int)
+
 /** Local project data, stored separately from original recordings. */
 class ScanRepository(private val context: Context) {
     private val root = File(context.filesDir, "capture_runs").also { it.mkdirs() }
@@ -31,6 +34,20 @@ class ScanRepository(private val context: Context) {
         }.format(Date()) + "_" + UUID.randomUUID().toString().take(10)
         return ScanRun(this, File(root, id).also { it.mkdirs() }, id, kind, false)
     }
+
+    fun savedPlyEntries(): List<SavedPlyEntry> =
+        (root.listFiles() ?: emptyArray()).filter { it.isDirectory }
+            .mapNotNull { folder ->
+                val file = File(folder, "sparse_two_view.ply")
+                if (!file.isFile) return@mapNotNull null
+                val meta = runCatching {
+                    JSONObject(File(folder,"sparse_report.json").readText())
+                }.getOrNull()
+                val source = runCatching {
+                    JSONObject(File(folder,"result.json").readText()).optString("sourceKind")
+                }.getOrDefault("unknown")
+                SavedPlyEntry(folder.name,source,file,meta?.optInt("pointCount") ?: 0)
+            }.sortedByDescending { it.runId }
 
     fun completedRunCount(): Int = root.listFiles()?.count {
         it.isDirectory && File(it, "result.json").isFile()
@@ -85,6 +102,12 @@ class ScanRepository(private val context: Context) {
                         val source = File(folder, name)
                         if (source.isFile) add("runs/" + folder.name + "/" + name, source.readBytes())
                     }
+                }
+                val calDir = File(context.filesDir, "camera_calibration")
+                for (name in listOf("last_checkerboard.json",
+                    "last_attempt.json", "events.jsonl")) {
+                    val source = File(calDir,name)
+                    if (source.isFile) add("calibration/"+name,source.readBytes())
                 }
                 add("all_runs_summary.json", JSONObject()
                     .put("appVersion", "android-0.5.0")
