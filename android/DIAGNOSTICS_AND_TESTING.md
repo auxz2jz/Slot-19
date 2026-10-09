@@ -111,3 +111,14 @@ No true geometric overlap verification or orientation/translation estimate. A pr
 - JPEG Smart capture EXIF orientation is not yet normalized before ORB matching; check physical orientation in device tests.
 - The existing Test This Version manual `Frames Look Correct` validates capture results only; it does not automatically confirm geometry report quality. Geometry analysis must have its own COMPLETED status and the user must inspect it separately.
 - CI compiles tests on JVM including pure `GeometryPolicyTest`. There is **no OpenCV native end-to-end instrumented test** in GitHub CI; runtime load and output meaningfulness are user-device test targets.
+
+## v0.5.0 first sparse two-view reconstruction — **USER UNVERIFIED**
+
+**Actual UI:** `Analyze Sparse 3D — Two Views` available after valid completed run with at least 2 frames; separate executor and progress for ≤7 anchor pairs. `Export Sparse PLY — Experimental` only after candidate PLY exists. Existing capture buttons/ORB geometry analysis unaffected.
+
+**Diagnostics:**
+- `ANALYZE_SPARSE_TWO_VIEW` user action and correlation/analysis ID; bounded `ANALYSIS_PROGRESS`; `ANALYSIS_RESULT` `SPARSE_CANDIDATE`/ `INCONCLUSIVE`; `ERROR` and `sparse_last_failure.json` on exception.
+- `sparse_report.json`: per-pair indices, ORB keypoints/matches, pose cheirality inlier count, estimated focal/principal point, accepted 3D points, median parallax and reprojection errors, conservative pass/fail reasons, selected pair when accepted.
+- Camera intrinsics are **guessed**, lens distortion is untreated, 3D scale unknown, only ONE pair triangulated. Positive RANSAC/cheirality does NOT establish accuracy or object-only geometry. A very featureless, planar, static or rotated-only sequence may produce `INCONCLUSIVE`. Reports are included in both ZIPs but PLY and raw frames remain excluded for privacy, unless the user specifically selects PLY output through Android SAF.
+- Guard against false positives: adequate keypoints/Hamming ratio matches; Essential RANSAC + recoverPose; positive depth in two camera frames; minimum parallax and valid projected pixel error; select best qualified pair or decline. Tests for purely geometric policy are JVM; OpenCV native correctness and actual PLY appearance require real device verification.
+- **Manual test:** first verify old Live, Video, Smart and ORB features. Capture ~20–30 overlapping moving-camera views of a textured object. Tap sparse analysis, inspect status and report. If candidate, export PLY, open in 3D point viewer and inspect shape (relative arbitrary coordinates). Repeat with static and featureless object; do not claim PASS simply from button taps. Send full diagnostic ZIP plus visual result. Only user physically confirming qualifies as a verified baseline.
