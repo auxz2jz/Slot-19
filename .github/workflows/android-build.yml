@@ -44,14 +44,14 @@ jobs:
         run: |
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           mkdir -p android-artifact
-          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/Video3DCapture-Android-v0.3.0-CANDIDATE.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-artifact/Video3DCapture-Android-v0.4.0-CANDIDATE.apk
           cd android-artifact
-          sha256sum Video3DCapture-Android-v0.3.0-CANDIDATE.apk > SHA256SUMS.txt
+          sha256sum Video3DCapture-Android-v0.4.0-CANDIDATE.apk > SHA256SUMS.txt
           ls -lh
       - name: Upload Android APK candidate
         uses: actions/upload-artifact@v4
         with:
-          name: video3d-android-v0.3.0-candidate
+          name: video3d-android-v0.4.0-candidate
           path: android-artifact/
           retention-days: 60
           if-no-files-found: error

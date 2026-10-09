@@ -42,7 +42,8 @@ class ScanRepository(private val context: Context) {
             ?.sortedBy { it.name } ?: emptyList()
         require(runs.isNotEmpty()) { "No completed runs" }
         val files = listOf("manifest.json", "result.json", "events.jsonl",
-            "test_results.json", "test_report.txt")
+            "test_results.json", "test_report.txt",
+            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -62,7 +63,16 @@ class ScanRepository(private val context: Context) {
                     }.getOrElse {
                         JSONObject().put("runId", folder.name).put("status", "UNREADABLE")
                     }
+                    val geometry = File(folder, "geometry_report.json").let { reportFile ->
+                        if (reportFile.isFile) runCatching {
+                            JSONObject(reportFile.readText())
+                        }.getOrNull() else null
+                    }
                     rows.put(JSONObject()
+                        .put("geometryStatus", geometry?.optString("status") ?: "NOT_ANALYZED")
+                        .put("geometryConsistentPairs",
+                            geometry?.optInt("epipolarConsistentPairs") ?: 0)
+                        .put("geometryPairCount", geometry?.optInt("pairCount") ?: 0)
                         .put("runId", folder.name)
                         .put("sourceKind", result.optString("sourceKind"))
                         .put("status", result.optString("status"))
@@ -76,7 +86,7 @@ class ScanRepository(private val context: Context) {
                     }
                 }
                 add("all_runs_summary.json", JSONObject()
-                    .put("appVersion", "android-0.3.0")
+                    .put("appVersion", "android-0.4.0")
                     .put("includedRunCount", runs.size)
                     .put("runs", rows).toString(2).toByteArray())
             }
@@ -108,7 +118,8 @@ class ScanRepository(private val context: Context) {
     fun export(run: ScanRun, uri: Uri): Long {
         run.event("USER_ACTION", "EXPORT_TEST_AND_DIAGNOSTICS")
         run.event("OPERATION_START", "DIAGNOSTIC_EXPORT")
-        val names = listOf("manifest.json", "result.json", "events.jsonl", "test_results.json", "test_report.txt")
+        val names = listOf("manifest.json", "result.json", "events.jsonl", "test_results.json", "test_report.txt",
+            "geometry_report.json", "geometry_pairs.jsonl", "geometry_last_failure.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)
@@ -121,7 +132,7 @@ class ScanRepository(private val context: Context) {
                         zip.closeEntry()
                         total += bytes.size
                     }
-                    entry("README.txt", ("Android Video 3D Capture Lab v0.3.0 diagnostics.\n" +
+                    entry("README.txt", ("Android Video 3D Capture Lab v0.4.0 diagnostics.\n" +
                         "No source video, camera image, filename or private URI included.\n").toByteArray())
                     names.forEach { name ->
                         val file = File(run.directory, name)
@@ -197,7 +208,7 @@ class ScanRun internal constructor(
             .put("sequenceNumber", ++sequence)
             .put("timestampUtcMs", System.currentTimeMillis())
             .put("monotonicTimeMs", SystemClock.elapsedRealtime() - startedMs)
-            .put("appVersion", "android-0.3.0")
+            .put("appVersion", "android-0.4.0")
             .put("sessionId", sessionId)
             .put("correlationId", id)
             .put("state", previousState)
@@ -330,7 +341,7 @@ class ScanRun internal constructor(
         if (brightness.isNotEmpty()) quality.put("meanBrightness", brightness.average())
         val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAtMs
         File(directory, "manifest.json").writeText(JSONObject()
-            .put("schemaVersion", 1).put("appVersion", "android-0.3.0")
+            .put("schemaVersion", 1).put("appVersion", "android-0.4.0")
             .put("runId", id).put("sourceKind", sourceKind)
             .put("requestedFps", options?.targetFps)
             .put("requestedMaxFrames", options?.maxFrames)
@@ -398,7 +409,7 @@ class ScanRun internal constructor(
         val passed = objective && looksCorrect
         val testStatus = if (passed) "PASS" else "FAIL"
         File(directory, "test_results.json").writeText(JSONObject()
-            .put("testId", "android_v0.3.0_capture")
+            .put("testId", "android_v0.4.0_capture")
             .put("testSessionId", UUID.randomUUID().toString())
             .put("runId", id).put("objectiveOutputValid", objective)
             .put("visualResultSource", if (looksCorrect) "MANUAL_PASS" else "MANUAL_FAIL")
@@ -406,7 +417,7 @@ class ScanRun internal constructor(
             .put("note", "A PASS does not establish user-verified baseline without user confirmation.")
             .toString(2))
         File(directory, "test_report.txt").writeText(
-            "Android v0.3.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
+            "Android v0.4.0 Test This Version\nRun: $id\nFrames: $frameCount\n" +
             "Output files/hashes validated: $objective\nVisual confirmation: $looksCorrect\n" +
             "Test: $testStatus\n")
         event("TEST_VERIFICATION", "VALIDATE_CAPTURE", JSONObject()
