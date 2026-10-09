@@ -1,6 +1,6 @@
-# Android diagnostic coverage and testing — v0.1.0 candidate
+# Android diagnostic coverage and testing — v0.3.0 candidate
 
-**State:** implemented in Android source; compiled and unit-tested in GitHub run [37891374599](https://github.com/auxz2jz/Slot-19/actions/runs/37891374599). **Not yet verified on an actual phone.** Governing rules: Master Instruction Library `DIAGNOSTICS_STANDARD.md` and `GUIDED_TESTING_STANDARD.md`.
+**State:** Android v0.2.0 basic capture/display physically user verified. New v0.3.0 adjustable rate, larger frame counts and combined-export features built and unit-tested in [GitHub Actions 37901552835](https://github.com/auxz2jz/Slot-19/actions/runs/37901552835); **new settings and comparison feature not yet verified on a device**. Governing rules: Master Instruction Library `DIAGNOSTICS_STANDARD.md` and `GUIDED_TESTING_STANDARD.md`.
 
 ## Actual implemented UI and operations
 - `Enable Camera` when camera permission missing: system runtime permission prompt.
@@ -63,3 +63,21 @@ This section supersedes v0.1.0-only labels above. Candidate source `21cc221cdd44
 
 ### Limitations
 No true geometric overlap verification or orientation/translation estimate. A progress bar does not establish 3D scene coverage. The CameraX full-resolution still and EXIF orientation must be physically reviewed. GitHub's JVM selector tests do not verify real camera sensor behavior. The known v0.1.0 diagnostics ZIP completion-event limitation remains. Tune thresholds only from measured runs; preserve last verified v0.1.0 source. See `CHECKPOINT.md` for exact build/recovery record.
+
+## v0.3.0 actual new diagnostic operations and coverage
+
+| Operation | Trigger | Accepted proof/metrics | Failure evidence |
+|---|---|---|---|
+| Select mode and change rate/limit | Live/Video/Smart chips and FPS/maximum sliders | Requested FPS and frame cap serialized in each new run's CAPTURE_SETTINGS event, manifest and result | Invalid 0.5–5fps or 10–300 bound rejected by CaptureOptions, tests |
+| Live/Video rate execution | Press Start Live Sampling / Choose Video | Actual JPEG manifests, sourceTimeMs differences, measuredFps, saved count and processingElapsedMs; per-frame mean brightness, sharpness edge proxy, estimated near-duplicate adjacent pairs | Lower measured rate, partial result, bad JPEG/hash, missing frames or exception |
+| Smart maximum shutter rate | Start Smart Auto Capture | No automatic shutter more frequently than requested cap; accepted JPG validated with novelty, brightness, stability and detail proxies | Photo unavailable, too-similar view, poor light, motion/rejection, shutter exception, no saved photos |
+| Export ALL Runs + FPS Comparison | System ZIP picker | all_runs_summary.json with every completed run ID; separate files under runs/<run-id>/; user verifies ZIP opens | Empty history, storage permission/ZIP error |
+| Latest run report | Export Test + Diagnostics | Only latest run, existing immutable run ID and captured settings | Post-closed ZIP may omit its own EXPORT_RESULT event; older known limitation |
+
+**Rate honesty:** requested vs `measuredFps` (derived from gaps in saved `sourceTimeMs`) are separate. Recorded-video timestamp spacing does not measure how quickly MediaMetadataRetriever decoded frames or whether multiple samples decode to duplicate content. `nearDuplicateAdjacentProxyCount`, `sharpnessProxy`, and `brightnessMean` are small-thumbnail appearance proxies only. There is no true overlap score, camera-pose registration, sparse/dense point cloud, or engine-level validation. No program can yet assert the globally “best FPS” from these proxies alone.
+
+**Controlled rate experiment:** import the SAME short video with matched temporal coverage at requested 0.5, 1, 2, 3 FPS and sufficiently high maxFrames (e.g., 100 for a 30-second recording). Confirm images visually, make a manual PASS/FAIL with Test This Version, export ALL Runs, compare saved counts, source timestamp spacing, duplicate proxies, brightness/detail proxies, bytes and processing time. Test video imports and live sampling separately; Smart Auto Capture is driven by novelty and quality and is not a fixed FPS test.
+
+**Persistence:** each unique run under app-private capture_runs persists unless app data is cleared. Global events are capped/rotated independently. Every single-run diagnostic export represents one run. The new all-run export includes all completed runs without camera image/video bytes. APK debug signing may differ between builds; backup/export runs before uninstalling.
+
+**Outstanding:** add true image correspondence/inlier/RANSAC quality measurements, user-selectable per-frame preview/contact sheet, export completion proof in ZIP, Android instrumentation tests across modes and frame-rate limits. Preserve verified v0.2 baseline when implementing these future features.
