@@ -1502,7 +1502,18 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "9. After generating sparse PLY, tap Verify Sparse Points in Third View. " +
             "Inspect successful third-view count or inconclusive reason in diagnostic ZIP. " +
             "This checks geometry but is not a full 3D scan. " +
-            "10. Tap Select Object in Two Photos. Photo 1 now opens LARGER. " +
+            "10. NEW RECOMMENDED ORDER: After extracting frames but BEFORE tapping Analyze Sparse 3D, " +
+            "tap Select Object BEFORE Sparse 3D. Photo 1 opens large. " +
+            "Drag ONE finger around the object, use + or - and Move to pan if needed, tap Next Photo, " +
+            "mark the SAME physical object in Photo 2, and tap Create. " +
+            "Then tap Analyze Sparse 3D — Two Views: full-scene pose and an independent ROI-priority ORB model run. " +
+            "The ROI object model uses its OWN two-view pose and coordinates, not a combined mesh. " +
+            "Legacy Select Object in Two Photos AFTER analysis still provides a subtractive filter. " +
+            "11. Test CALIBRATION with no video imported; use Export ALL Runs + Calibration Diagnostics " +
+            "even if there are no completed runs. Check camera preview returns afterward. " +
+            "12. Turn phone sideways during video processing or calibration; check operation continues " +
+            "rather than resetting. " +
+            "13. If calibration stops the app, reopen and look for interrupted-calibration message. " + +
             "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
             "or switch to Move to pan a zoomed image. Tap Next Photo. " +
             "Draw the same object in Photo 2 and tap Create Object PLY. " +
