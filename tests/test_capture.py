@@ -74,6 +74,37 @@ class CaptureContractTests(unittest.TestCase):
             self.assertNotIn(str(bad), log)
             self.assertEqual(result["frameCount"], 0)
 
+    @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg missing")
+    def test_guided_test_reports_correlated_results(self):
+        from unittest.mock import patch
+        from videogrammetry.__main__ import test_version
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "guide.mp4"
+            completed = subprocess.run([
+                "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                "-i", "testsrc=size=80x60:rate=10:duration=2",
+                "-c:v", "mpeg4", "-q:v", "3", "-y", str(video)
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            self.assertEqual(completed.returncode, 0)
+            project = root / "project"
+            with patch("builtins.input", return_value="y"):
+                self.assertEqual(test_version(project, str(video)), 0)
+            run_dir = next((project / "runs").iterdir())
+            result = json.loads((run_dir / "test_results.json").read_text())
+            self.assertEqual(result["status"], "PASS")
+            self.assertTrue(result["testSessionId"])
+            events = (run_dir / "events.jsonl").read_text()
+            self.assertIn('"category": "TEST_RESULT"', events)
+            self.assertIn('"category": "OPERATION_RESULT"', events)
+            archive = next((project / "exports").glob("*.zip"))
+            with zipfile.ZipFile(archive) as bundle:
+                self.assertIn("test_results.json", bundle.namelist())
+                self.assertIn("events_after_export.jsonl", bundle.namelist())
+                self.assertIn('"category": "OPERATION_RESULT"',
+                              bundle.read("events_after_export.jsonl").decode())
+
 
 if __name__ == "__main__":
     unittest.main()
