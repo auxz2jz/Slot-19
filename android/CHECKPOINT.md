@@ -1,47 +1,34 @@
-# Android Recovery Checkpoint — v0.2.0 Smart Auto Capture
+# Android recovery checkpoint — v0.3.0 adjustable FPS and cross-run diagnostics
 
-Updated 2026-10-08 PDT / GitHub build records are 2026-10-09 UTC. This file is the **current Android-only handoff**. Prior detailed v0.1.0 test evidence is archived verbatim at `android/history/ANDROID_V0.1.0_CAPTURE_REPORT.md`.
+Updated 2026-10-09 UTC (2026-10-08 PDT user session). **Platform: Android only.**
 
-## Current status (do not confuse with Windows)
+## Verified capture baseline (preserve)
+- **LAST USER-VERIFIED CAPTURE BASELINE: Android v0.2.0**, limited to the three capture modes and visible saved-frame behavior, as explicitly reported by user. This is NOT verified photogrammetry reconstruction, accurate image overlap, or validated automatic keyframe quality.
+- User statement: *“I tested all three methods ... frames change when they're being analyzed ... everything looks fine.”*
+- User-uploaded `Android-v0.2.0-test-diagnostics.zip` recorded-video run `20261009T074031Z_c87a7f9c-2`: 40/40 frames, 720×1280, requested 0–39s (1 FPS), app validation PASS, manual `FRAMES_LOOK_CORRECT` PASS, zero errors; valid diagnostic ZIP. It contains only the most recent run.
+- Source commit `21cc221cdd4421e3ee17c8167b970486cb38f365`; backup branch `backup/android-v0.2.0-user-verified-capture` and `backup/android-v0.2.0-smart-ci-candidate`.
+- CI for verified version: run `37894898716` SUCCESS. APK SHA256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`. Older v0.1.0 baseline source retained separately.
+- Exact Windows historical code, root checkpoint, and `auxz2jz/Slot-8` have not been modified by this feature.
 
-- Repository: `auxz2jz/Slot-19`. Governing instructions: `auxz2jz/master-instruction-library` and repo `AGENTS.md`.
-- Platform: **Android**; owned source `android/`, Android-only GitHub Actions workflow. No edits to Windows source or windows-specific documentation from Android feature work.
-- **LAST USER-VERIFIED ANDROID BASELINE: v0.1.0 for the *capture workflows*** (live camera sample frames and recorded-video extraction/preview; NO 3D reconstruction). The user's guided live run marked PASS and the user explicitly said the final extracted frame from recorded video looked fine. Preservation branch: `backup/android-v0.1.0-user-verified-capture`, exact source commit `fd7973c6a978136d1154872162f772127c5ecfd9`. v0.1 APK SHA-256: `132a5780d575bee9d243c9adccb35a953b42ad998760ef3711eaac620988b639`. Live diagnostic run 30/30 saved JPEGs with manual PASS; recorded-video run 40/40 saved JPEGs; user separately confirmed visible recorded image. Both diagnostic ZIPs were structurally valid, with no capture error reported.
-- **LATEST UNVERIFIED ANDROID CANDIDATE: v0.2.0**, `versionCode 2`, `versionName 0.2.0`, package `com.auxz2jz.videogrammetry`. Candidate exact tested source commit `21cc221cdd4421e3ee17c8167b970486cb38f365`; preserved branch `backup/android-v0.2.0-smart-ci-candidate`.
-- GitHub Actions `37894898716` SUCCESS — `testDebugUnitTest` and `assembleDebug` both PASS, artifact ZIP checksum generated and APK uploaded. Build URL: https://github.com/auxz2jz/Slot-19/actions/runs/37894898716
-- Artifact name `video3d-android-v0.2.0-candidate`, artifact ID `11599926676`. APK filename `Video3DCapture-Android-v0.2.0-CANDIDATE.apk`; APK bytes `11550489`; SHA-256 `320c78731c15567e377db30f1ccd6b6db223eb25611230c94e553842f37ec785`. Artifact ZIP and APK hash checked against embedded `SHA256SUMS.txt` (PASS).
-- **Android v0.2.0 has not been physically tested or user-verified.** No automatic-photo camera test, useful-view selection test, JPEG color/orientation/FOV test, or photo-coverage test performed on user's device. The v0.1.0 verified capture baseline is never overwritten merely by v0.2.0 build success.
+## New Android candidate v0.3.0 (NOT USER-VERIFIED)
+- Source merge commit `8c61027d3eb83efcfa1bf8d4df4caf8631f2b262` (PR #1), `versionCode=3`, `versionName=0.3.0`.
+- Three independent, persistent mode-specific settings accessible via `Live`, `Video`, `Smart` chips. FPS slider 0.5–5.0 in 0.5 increments; total frames slider 10–300 in 10 increments. Default Live 1 FPS/30; Video 1 FPS/40; Smart cap 0.5 photos/sec/30. Smart uses the rate only as a minimum time between eligible full-resolution photos, still checking quality and novelty.
+- Existing `Start Live Sampling`, `Choose Video` and `Start Smart Auto Capture` retained. Video extraction updates displayed frame periodically. A new `Export ALL Runs + FPS Comparison` exports all completed runs' metadata/results/events/tests into one ZIP, no source videos/photos.
+- Each new run records requested FPS/max frames, actual sampled interval from saved source times, output file count/bytes, elapsed processing, mean thumbnail sharpness/brightness proxy where available, estimated adjacent duplicates in fixed-interval modes, and smart image-change/proxy metrics. **These are not proof of geometric reconstruction quality; no ORB pose/point clouds/mesh yet.**
+- Global event trace is bounded/rotating; individual per-run reports persist separately in app-private storage. A normal `Export Test + Diagnostics` creates a ZIP for the latest run ONLY. `Export ALL Runs` produces cross-run report collection. Uninstalling app may delete runs.
+- Comparison recommended: reprocess one identical 30-second recording at 0.5 / 1 / 2 / 3 FPS with maxFrames sufficient for equal temporal coverage (e.g., 100 for all). Measure spacing, images, blur/edge proxy, duplicates, bytes and processing time. Higher FPS is not automatically better.
 
-## Implementation / v0.2.0 feature
-
-**Three capture modes, not replacements:** (1) Original `Start Live Sampling` (up to 30 fixed-interval camera frames), (2) `Choose Video` (up to 40 fixed-interval imported video frames, with progressive saved-frame preview now visible during import), (3) new `Start Smart Auto Capture` / `Stop Smart Auto Capture`.
-
-The new smart mode uses CameraX ImageAnalysis at approximately 350ms intervals to evaluate a lightweight 64x48 grayscale thumbnail. `SmartFrameSelector.kt` checks mean brightness, spatial-edge sharpness proxy, stability between frames, image-change estimate since last accepted photo, 1.8s minimum spacing, plus estimated possible lost overlap. It displays simple panorama-inspired operator feedback and a **view-change progress bar**; it does NOT measure camera pose, degrees, distance, true geometric image overlap, or object-complete coverage.
-
-The optional CameraX **ImageCapture** use case requests a full-resolution still JPEG after the algorithm accepts a new view; saved JPG is not an overlay screenshot and is not re-compressed. `ScanRun.saveCapturedJpeg` records file size, dimensions, SHA256, time and score metrics; an automatic action is PASS only after a real decodable file is present. Up to 30 smart photos per run. Smart use-case binding failure should not prevent the original two capture modes, but that fallback is not yet physically device-tested.
-
-The Compose preview shows the latest saved frame at reduced display resolution to prevent huge Bitmap memory use, while saved full-resolution JPEG remains intact. Still photos may contain EXIF rotation metadata that needs device verification. Existing guided `Test This Version` result semantics and diagnostics ZIP remain; new smart decisions emit rate-limited `FRAME_DECISION` events and saved-frame validation.
-
-## Known limitations, risks, and diagnostic gaps
-
-- Quality/novelty heuristics are **experimental**, must not be interpreted as ORB-inlier/RANSAC verified overlap or reliable panorama direction. Smooth or repetitive objects and camera exposure changes can confuse the selector; tests on different backgrounds are essential.
-- Additional CameraX ImageCapture use case may not be compatible with every device/camera combination. Disable that third mode if its binding fails, rather than regress legacy capture. Needs physical test.
-- v0.2.0 is still a **capture-only** app; no sparse point cloud, SfM, mesh, texture, laser or 3D reconstruction engine.
-- Live v0.1 output had square 1088x1088 sample dimensions; no assumption of complete field of view. Smart full-res actual aspect ratio and EXIF orientation are unverified.
-- Diagnostic ZIP includes export-start events but may not include its own export-completion event, because that event is written after closing ZIP. Historical known gap; do not misreport ZIP failure.
-- The smart guide uses the existing latest-run manual pass/fail; **not a complete spatial-coverage analysis**. Expected Behavior Failed must remain selectable.
-- Android GitHub Actions build uses debug signing; the certificate may differ from a previously installed candidate. If upgrading fails, export diagnostics and preserve desired app data BEFORE uninstalling the old APK, as uninstall deletes app-private capture runs.
-- No user device diagnostics exist yet for v0.2.0.
-
-## Build/debug and tests
-
-- Initial v0.1 build SDK setup and missing `setContent` import problems are archived; v0.1 user-tested capture baseline is preserved.
-- v0.2 tests added in `SmartFrameSelectorTest.kt` for first-frame, duplicate rejection, motion/stabilization, too-dark/too-bright/soft image rejection, brightness compensation, capture cooldown and bounded progress; original `FramePolicyTest.kt` retained. GitHub Actions ran JVM tests and `assembleDebug` successfully.
-- A smart-capture error cannot silently yield PASS after an earlier successful frame: `smartHadError` forces failure. Preview display decode downsampled separately from full-size photo.
-- No real camera/Android instrumentation test in CI; correctness of actual full-resolution photos and selection behavior remains USER TEST PENDING.
+## Diagnostic/test and known limitations
+- New `CaptureOptionsTest.kt` verifies valid bounds and measured source FPS; `SmartFrameSelectorTest.kt` and legacy frame tests retained. Android GitHub Actions build run `37901552835` initiated by merge; status must be checked, do not infer PASS before it completes.
+- Actual camera frame rate and Android MediaMetadataRetriever seek accuracy depend on hardware/decoder. Requested FPS is a target; measured FPS reflects **selected source timestamps**, not importer compute speed.
+- Smart full-res photos may use significant storage; 300 is a safety cap, not a claim that 300 are optimal. The smart heuristic does not reconstruct camera poses; exact panorama angle/overlap guidance is deferred.
+- Diagnostic ZIP export may lack its own post-close `EXPORT_RESULT` event; a known observability issue, not necessarily export failure.
+- `app/src/main/java/.../ScanRepository.kt` logs per-run data but main screen only displays the latest frame and latest single-run report. All-run ZIP enables comparison without deleting old runs.
+- The submitted ZIP contains no photos, so true camera framing/sharpness of those source images cannot be independently inspected here.
 
 ## Exact next action
-
-Install v0.2.0 on Android phone (safely preserving v0.1 data). Check `Start Live Sampling` and `Choose Video` still behave correctly. Test `Start Smart Auto Capture` on a stationary object: first hold still, then move gradually to a new angle and hold again. Observe guidance/progress and number of *actual validated full-resolution photos*. Try leaving camera still (should not accumulate many identical photos), then poor lighting/fast movement (should warn or decline). `Stop Smart Auto Capture`, inspect saved latest-photo appearance, choose manual PASS or `Expected Behavior Failed` via `Test This Version`, export diagnostics and share results.
-
-Only mark v0.2.0 verified after user says it works. If regression, return to preserved verified v0.1.0 source/APK and make smallest evidence-based correction. Windows and Slot-8 source remain untouched.
+1. Confirm new v0.3.0 GitHub Actions completed with Android compile, JVM tests and APK artifact; inspect failures and fix only targeted causes if any.
+2. Record exact compiled source commit, artifact hash, backup candidate branch and ensure Windows code unaffected.
+3. User installs APK, tests all 3 modes plus FPS sliders on video/live and smart maximum rate, verifies saved count and saved-frame display.
+4. User exports **ALL Runs + FPS Comparison** and reports visual results at different rates, including photo quality.
+5. Only after explicit user confirmation promote v0.3.0 to user-verified capture baseline. Preserve verified v0.2.0 fallback.
