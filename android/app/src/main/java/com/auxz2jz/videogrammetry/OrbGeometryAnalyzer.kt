@@ -123,7 +123,7 @@ class OrbGeometryAnalyzer {
         val summary = JSONObject()
             .put("analysisId", analysisId)
             .put("runId", run.id)
-            .put("appVersion", "android-0.4.0")
+            .put("appVersion", "android-" + BuildConfig.VERSION_NAME)
             .put("engine", "opencv-4.12.0_ORB_HAMMING_0.75_F_RANSAC")
             .put("sourceFrames", frames.length())
             .put("analyzedFrames", indices.size)
