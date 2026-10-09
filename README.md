@@ -27,35 +27,35 @@ Record external engine versions, installation methods, capabilities, license imp
 
 ## Run the first preview (Windows)
 
-Install **Python 3.10+** and **FFmpeg/ffprobe** locally, ensuring \`ffmpeg\` is on PATH. Use a command prompt in the checked-out Slot-19 repository. No extra Python packages are required to run v0.1.0.
+Install **Python 3.10+** and **FFmpeg/ffprobe** locally, ensuring `ffmpeg` is on PATH. Use a command prompt in the checked-out Slot-19 repository. No extra Python packages are required to run v0.1.0.
 
-\`\`\`powershell
+```powershell
 py -m videogrammetry check
 py -m videogrammetry engines
 py -m videogrammetry extract --project ".\MyScans" --recording "C:\Videos\object.mp4" --interval 1 --max-frames 120
 py -m videogrammetry test-this-version --project ".\MyScans" --recording "C:\Videos\object.mp4"
-\`\`\`
+```
 
 For a reachable live RTSP network stream (for example a phone/IP camera that **already** exposes RTSP on your LAN), use:
 
-\`\`\`powershell
+```powershell
 py -m videogrammetry extract --project ".\MyScans" --stream "rtsp://CAMERA_HOST/stream" --duration 30 --interval 1 --max-frames 60
-\`\`\`
+```
 
 For a Windows camera, specify its **actual DirectShow device name**:
 
-\`\`\`powershell
+```powershell
 py -m videogrammetry extract --project ".\MyScans" --camera "Integrated Camera" --duration 20
-\`\`\`
+```
 
 Replace sample filenames, camera names, and addresses with real local sources. Do **not** put passwords in commands you plan to share. RTSP/DirectShow live input is designed but **not yet verified with your camera or computer**.
 
-Results live under \`MyScans/runs/<run-id>/\` including \`frames/\`, \`frames_manifest.json\`, \`events.jsonl\`, and \`run_result.json\`. Each new run gets a unique folder; the original video is preserved. The guide asks you to inspect representative frames and allows an explicit failure response. Diagnostic ZIP exports contain reports **without the source video or frame images**.
+Results live under `MyScans/runs/<run-id>/` including `frames/`, `frames_manifest.json`, `events.jsonl`, and `run_result.json`. Each new run gets a unique folder; the original video is preserved. The guide asks you to inspect representative frames and allows an explicit failure response. Diagnostic ZIP exports contain reports **without the source video or frame images**.
 
 ## Important first-version limitations
 
 - v0.1.0 is a **command-line acquisition preview**, not yet a graphical scanning app.
 - It extracts frames at a **fixed time interval**. Automatic sharpness/overlap filtering is a later milestone.
 - A PASS means real frame files were validated. It does **not** mean that any 3D reconstruction has run.
-- The \`engines\` command lists planned integrations, not working installations.
+- The `engines` command lists planned integrations, not working installations.
 - Full photogrammetry and multiple engine comparison are subsequent milestones.
