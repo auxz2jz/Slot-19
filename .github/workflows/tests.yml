@@ -15,8 +15,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Confirm FFmpeg
-        run: ffmpeg -version | head -n 1
+      - name: Install and verify FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
       - name: Compile source
         run: python -m compileall -q videogrammetry tests
       - name: Run targeted tests
