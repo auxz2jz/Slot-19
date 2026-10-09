@@ -499,6 +499,9 @@ class SparseTwoViewAnalyzer {
             } else {
                 // Avoid re-exporting stale PLY from a previous attempt.
                 existingCloud.delete()
+                for(name in listOf("sparse_point_projections.json","sparse_object_focus.ply",
+                    "object_focus_report.json","object_focus_selection.json"))
+                    File(run.directory,name).delete()
                 report.put("status","INCONCLUSIVE")
                     .put("pointCount",0)
                     .put("warning","No pair met parallax/inlier/reprojection gates. This is not a capture failure.")
