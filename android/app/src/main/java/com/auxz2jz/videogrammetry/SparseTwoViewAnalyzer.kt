@@ -235,7 +235,7 @@ class SparseTwoViewAnalyzer {
             .put("algorithm","ORB+Hamming+E_RANSAC+recoverPose+triangulatePoints")
             .put("scale","UNKNOWN_ARBITRARY_UNIT_BASELINE")
             .put("cameraIntrinsics","ESTIMATED_NOT_CALIBRATED")
-            .put("sourceFrameCount",frames.length)
+            .put("sourceFrameCount",frames.length())
             .put("status","IN_PROGRESS")
         val existingCloud=File(run.directory,"sparse_two_view.ply")
         val details=JSONArray()
