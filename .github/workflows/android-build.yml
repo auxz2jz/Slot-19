@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "android/**"
+      - "android/app/**"
+      - "android/build.gradle.kts"
+      - "android/settings.gradle.kts"
+      - "android/gradle.properties"
       - ".github/workflows/android-build.yml"
   workflow_dispatch:
 
