@@ -764,6 +764,16 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    /** Low-volume, privacy-safe trace for the step-by-step photo selector. */
+    fun logObjectFocusUi(action: String, step: Int) {
+        if(action in setOf("DRAW_VALID","DRAW_INVALID","NEXT_PHOTO",
+                "BACK_PHOTO","ZOOM_IN","ZOOM_OUT","MODE_DRAW",
+                "MODE_MOVE","RESET_VIEW","CREATE_REQUEST")) {
+            currentRun?.event("USER_ACTION","OBJECT_FOCUS_UI_"+action,
+                JSONObject().put("photoNumber",step))
+        }
+    }
+
     /** Real selected source pair photos, from saved sparse analysis. */
     fun objectFocusSourcePhotos(): Pair<File,File>? {
         if (objectFocusWorking || sparseAnalyzing || thirdViewAnalyzing ||
@@ -1321,6 +1331,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         ObjectFocusDialog(
             photos=photos,
             onDismiss={focusPhotos=null},
+            onUiEvent={action,photoNumber ->
+                coordinator.logObjectFocusUi(action,photoNumber)
+            },
             onConfirm={first,second ->
                 focusPhotos=null
                 coordinator.applyObjectFocus(first,second)
@@ -1356,8 +1369,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "9. After generating sparse PLY, tap Verify Sparse Points in Third View. " +
             "Inspect successful third-view count or inconclusive reason in diagnostic ZIP. " +
             "This checks geometry but is not a full 3D scan. " +
-            "10. Tap Select Object in Two Photos. Drag a green rectangle around " +
-            "the object in BOTH real source photos, and create the object-focus candidate. " +
+            "10. Tap Select Object in Two Photos. Photo 1 now opens LARGER. " +
+            "In Draw box mode, drag ONE finger to select the object; use + and − to zoom, " +
+            "or switch to Move to pan a zoomed image. Tap Next Photo. " +
+            "Draw the same object in Photo 2 and tap Create Object PLY. " +
             "Compare Full scene vs Object focus saved clouds, verify kept and excluded " +
             "point counts, then export each separate PLY. Use a bad/empty region to test " +
             "the inconclusive path. New diagnostics should contain object_focus_report.json.") },
