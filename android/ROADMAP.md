@@ -166,3 +166,11 @@ Each Android baseline, build, test, and checkpoint remains platform-specific. No
 - [ ] User has not confirmed whether point cloud resembles their physical object. Do not mark model accuracy, scale, or global multi-view structure verified.
 - [ ] Camera calibration source 1000×467 aspect incompatible with saved video 720×1280; match camera/lens/crop/zoom and EXIF before enabling calibrated pose estimation.
 - [ ] Improve object/background feature separation and eventually multi-view SfM/bundle adjustment only with trustworthy geometry tests and recovery baseline preserved.
+
+
+## Next: object versus background after v0.7.0 visual feedback
+- [x] User confirmed v0.7 built-in viewer displays/rotates PLY and reports a **partially recognizable central cluster**, surrounding apparent sparse/empty tabletop area, and peripheral likely background points; this is interpretation, not ground-truth segmentation.
+- [ ] Preserve all scene points and the existing PLY/viewer; add an **opt-in object region selector on real saved images**, preferably target boxes on both source frames 0 and selected pair second image, rather than assuming image center is the object.
+- [ ] Use camera-pose estimation with available scene support, but separately label/filter triangulated tracks by **target-region support in both images**, and export object-only experimental PLY and all-scene comparison with feature-count diagnostics; do not call object-only a mesh.
+- [ ] Provide a human-checkable overlay of source keypoint locations / kept-vs-rejected tracks to distinguish central object from table/background and catch false positives.
+- [ ] Maintain 9×6 25 mm checkerboard model separately; block camera intrinsics if lens/zoom/frame crop/aspect not proven compatible. Later plan robust multi-view SfM and bundle adjustment only after target-track evidence.
