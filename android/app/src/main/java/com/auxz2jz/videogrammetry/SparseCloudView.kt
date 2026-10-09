@@ -42,7 +42,7 @@ class SparseCloudView(context: Context) : View(context) {
         setBackgroundColor(Color.rgb(12,19,31))
         contentDescription="Sparse 3D point cloud, drag to rotate and pinch to zoom"
     }
-    fun load(value: PointCloud) { cloud=value; reset() }
+    fun load(value: PointCloud) { if (cloud !== value) { cloud=value; reset() } }
     fun reset() {
         yaw=0.5f;pitch=-0.2f;zoom=1f;invalidate()
     }
