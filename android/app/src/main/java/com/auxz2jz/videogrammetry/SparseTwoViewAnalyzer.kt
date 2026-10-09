@@ -49,7 +49,7 @@ class SparseTwoViewAnalyzer {
         require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) { "Unsafe image name" }
         return File(File(run.directory, "frames"), name)
     }
-    private fun features(file: File, orb: ORB): Features {
+    private fun features(file: File, orb: ORB, focus:FocusRect?=null): Features {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid JPEG" }
@@ -71,7 +71,22 @@ class SparseTwoViewAnalyzer {
         try {
             Utils.bitmapToMat(image, rgba)
             Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
-            orb.detectAndCompute(gray, Mat(), keys, desc)
+            if(focus==null) {
+                orb.detectAndCompute(gray, Mat(), keys, desc)
+            } else {
+                require(focus.valid()) { "Invalid object rectangle" }
+                val mask=Mat.zeros(gray.rows(),gray.cols(),CvType.CV_8UC1)
+                try {
+                    val x0=(focus.left*gray.cols()).toInt().coerceIn(0,gray.cols()-1)
+                    val y0=(focus.top*gray.rows()).toInt().coerceIn(0,gray.rows()-1)
+                    val x1=(focus.right*gray.cols()).toInt().coerceIn(x0+1,gray.cols())
+                    val y1=(focus.bottom*gray.rows()).toInt().coerceIn(y0+1,gray.rows())
+                    Imgproc.rectangle(mask,Point(x0.toDouble(),y0.toDouble()),
+                        Point((x1-1).toDouble(),(y1-1).toDouble()),
+                        org.opencv.core.Scalar(255.0),-1)
+                    orb.detectAndCompute(gray,mask,keys,desc)
+                } finally { mask.release() }
+            }
             return Features(keys.toArray(), desc, image)
         } catch (ex: Exception) {
             image.recycle(); desc.release()
