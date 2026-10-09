@@ -25,6 +25,9 @@ fun ObjectFocusDialog(photos:Pair<File,File>,onDismiss:()->Unit,
     val second=remember(photos.second.absolutePath) {
         ObjectRegionView(context).apply { load(photos.second) }
     }
+    DisposableEffect(first,second) {
+        onDispose { first.releasePhoto();second.releasePhoto() }
+    }
     var step by remember { mutableIntStateOf(0) }
     var moving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("Drag ONE finger around the object in Photo 1.") }
