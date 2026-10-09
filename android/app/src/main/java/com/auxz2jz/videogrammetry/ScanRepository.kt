@@ -69,7 +69,7 @@ class ScanRepository(private val context: Context) {
                         zip.closeEntry()
                         total += bytes.size
                     }
-                    entry("README.txt", ("Android Video 3D Capture Lab v0.1.0 diagnostics.\n" +
+                    entry("README.txt", ("Android Video 3D Capture Lab v0.2.0 diagnostics.\n" +
                         "No source video, camera image, filename or private URI included.\n").toByteArray())
                     names.forEach { name ->
                         val file = File(run.directory, name)
@@ -129,7 +129,7 @@ class ScanRun internal constructor(
             .put("sequenceNumber", ++sequence)
             .put("timestampUtcMs", System.currentTimeMillis())
             .put("monotonicTimeMs", SystemClock.elapsedRealtime() - startedMs)
-            .put("appVersion", "android-0.1.0")
+            .put("appVersion", "android-0.2.0")
             .put("sessionId", sessionId)
             .put("correlationId", id)
             .put("state", previousState)
@@ -173,6 +173,48 @@ class ScanRun internal constructor(
         }
     }
 
+    /**
+     * CameraX ImageCapture saves a full-resolution JPEG with orientation EXIF.
+     * Move it intact into this run; no Bitmap recompression or image overlay.
+     * Only validated physical files become accepted scan photos.
+     */
+    @Synchronized
+    fun saveCapturedJpeg(pending: File, sourceTimeMs: Long,
+                         metrics: SmartDecision): Int {
+        check(!closed) { "Cannot append to finalized smart capture" }
+        val index = frameEntries.length() + 1
+        val name = "frame_%04d.jpg".format(Locale.US, index)
+        val destination = File(File(directory, "frames"), name)
+        try {
+            check(pending.isFile && pending.length() > 100) { "ImageCapture JPEG missing or empty" }
+            check(pending.renameTo(destination)) { "Unable to move full-size JPEG to run" }
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(destination.absolutePath, options)
+            check(options.outWidth > 0 && options.outHeight > 0) { "Full-size JPEG decode failed" }
+            val entry = JSONObject()
+                .put("name", name).put("width", options.outWidth).put("height", options.outHeight)
+                .put("bytes", destination.length()).put("sha256", sha256(destination))
+                .put("sourceTimeMs", sourceTimeMs)
+                .put("captureType", "CAMERAX_IMAGE_CAPTURE_FULL_RES")
+                .put("imageChangeProxy", metrics.novelty)
+                .put("sharpnessProxy", metrics.sharpness)
+                .put("brightnessMean", metrics.brightness)
+                .put("stabilityProxy", metrics.instability)
+            frameEntries.put(entry)
+            event("OUTPUT_VALIDATION", "SMART_PHOTO_SAVED", JSONObject()
+                .put("frameCount", index).put("width", options.outWidth)
+                .put("height", options.outHeight).put("bytes", destination.length())
+                .put("imageChangeProxy", metrics.novelty))
+            return index
+        } catch (exc: Exception) {
+            pending.delete()
+            destination.delete()
+            event("ERROR", "SMART_PHOTO_SAVED", JSONObject()
+                .put("errorType", exc.javaClass.simpleName).put("frameIndex", index))
+            throw exc
+        }
+    }
+
     fun recentPreview(): File? = File(directory, "frames").listFiles()
         ?.filter { it.isFile && it.extension == "jpg" }?.maxByOrNull { it.name }
 
@@ -185,11 +227,12 @@ class ScanRun internal constructor(
         val verified = validateSavedFrames()
         val success = inputSucceeded && verified && frameEntries.length() > 0
         File(directory, "manifest.json").writeText(JSONObject()
-            .put("schemaVersion", 1).put("appVersion", "android-0.1.0")
+            .put("schemaVersion", 1).put("appVersion", "android-0.2.0")
             .put("runId", id).put("sourceKind", sourceKind)
-            .put("frameIntervalMs", if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS
+            .put("frameIntervalMs", if (sourceKind == "smart_auto") 0L else if (sourceKind == "live_camera") FramePolicy.LIVE_INTERVAL_MS
                 else FramePolicy.IMPORT_INTERVAL_MS)
-            .put("samplingMethod", "fixed_interval_not_quality_filtered")
+            .put("samplingMethod", if (sourceKind == "smart_auto")
+                "heuristic_quality_and_view_change_no_pose" else "fixed_interval_not_quality_filtered")
             .put("sourceTimestampNote", "Requested sampling time; not verified geometric camera pose")
             .put("frames", frameEntries).toString(2))
         val status = if (success) "PASS" else "FAIL"
