@@ -231,7 +231,7 @@ class SparseTwoViewAnalyzer {
         require(pairs.isNotEmpty()) { "At least two images required" }
         val id=UUID.randomUUID().toString()
         val report=JSONObject().put("analysisId",id).put("runId",run.id)
-            .put("appVersion","android-0.5.0")
+            .put("appVersion","android-" + BuildConfig.VERSION_NAME)
             .put("algorithm","ORB+Hamming+E_RANSAC+recoverPose+triangulatePoints")
             .put("scale","UNKNOWN_ARBITRARY_UNIT_BASELINE")
             .put("cameraIntrinsics","ESTIMATED_NOT_CALIBRATED")
