@@ -11,10 +11,14 @@
 
 ### Device verification still required before baseline
 - [ ] User installs v0.1.0 and confirms camera permission and live preview.
-- [ ] User verifies live saved frame count, color and orientation.
-- [ ] User selects a real recorded video; frames physically save and display correctly.
-- [ ] User completes guided PASS/FAIL and exports test + diagnostic ZIP.
-- [ ] Record user-confirmed last verified baseline with exact artifact/source hash.
+- [x] User generated live run with 30 validated frames and in-app **MANUAL_PASS**. Preview framing/crop and actual images are not included in diagnostics; further visual details unconfirmed.
+- [x] User selected a real recorded video, app decoded and validated 40/40 files with no missing frames. **Saved-image appearance not manually graded in this export.**
+- [x] User completed guided PASS for live run and uploaded two structurally valid redacted diagnostic ZIPs. Recorded-video run has no guided manual result.
+- [ ] Obtain recorded-video visual confirmation and whether square live frames have unwanted cropping; only then consider an overall user-verified baseline.
+
+### Evidence-driven diagnostics follow-up
+- [ ] Future candidate: include authoritative diagnostic export-completion evidence in a subsequent export/acknowledgment (current ZIPs capture export start but not post-close completion).
+- [ ] Review live 1088×1088 output framing for possible unwanted cropping; avoid guessing from metadata alone.
 
 ## A1 — quality and usability
 - [ ] Proven/tested live stream frame-orientation and exposure handling.
