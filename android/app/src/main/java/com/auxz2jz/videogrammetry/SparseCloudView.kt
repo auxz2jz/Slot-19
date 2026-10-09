@@ -110,7 +110,8 @@ class SparseCloudView(context: Context) : View(context) {
             canvas.drawCircle(dot.px,dot.py,pointRadius*resources.displayMetrics.density,paint)
         }
         paint.color=Color.rgb(195,207,221);paint.textSize=13f*resources.displayMetrics.density
-        canvas.drawText("Two-view sparse points | scale unknown",
+        canvas.drawText((cloud?.sourceLabel ?: "Experimental XYZ") +
+            " | unknown scale",
             10f*resources.displayMetrics.density,21f*resources.displayMetrics.density,paint)
         canvas.drawText("Visible: " + plotted.size + " / " + vertices.size +
             if (focusCluster) " (cluster focus)" else " (all)",
