@@ -145,6 +145,7 @@ class ObjectFocusProcessor {
                 .put("excludedScenePoints",vertices.size-filtered.size)
                 .put("sourcePair",map.getJSONArray("sourcePair"))
                 .put("sourcePlySha256",map.getString("plySha256"))
+                .put("sourcePointIndices",JSONArray(kept))
                 .put("firstRectangle",regionJson(first))
                 .put("secondRectangle",regionJson(second))
                 .put("status",if(filtered.isEmpty())"NO_POINTS_IN_BOTH_REGIONS"
