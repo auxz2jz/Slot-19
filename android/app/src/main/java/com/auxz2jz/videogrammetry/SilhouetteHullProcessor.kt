@@ -97,10 +97,14 @@ class SilhouetteHullProcessor {
         val pair=selections.getJSONArray("sourcePair")
         val first=pair.getInt(0);val second=pair.getInt(1)
         val sceneTrack=File(run.directory,"scene_camera_track_report.json")
-        val independentScenePose=sceneTrack.isFile
-        val input=JSONObject(File(run.directory,if(independentScenePose)
-            "scene_camera_track_report.json" else CloudArtifacts.MULTIVIEW_REPORT)
-            .readText())
+        val sceneCandidate=runCatching {JSONObject(sceneTrack.readText())}.getOrNull()
+        val independentScenePose=sceneCandidate?.let {
+            it.optString("runId")==run.id && it.optBoolean("sceneAligned") &&
+                it.optString("status")=="SCENE_CAMERA_POSES_AVAILABLE" &&
+                it.optInt("registeredExtraViews")>0
+        } ?: false
+        val input=if(independentScenePose)sceneCandidate!!
+            else JSONObject(File(run.directory,CloudArtifacts.MULTIVIEW_REPORT).readText())
         val poseAligned=if(independentScenePose)input.optBoolean("sceneAligned")
             else input.optBoolean("sameCoordinateSystemAsFullScene")
         require(input.getString("runId")==run.id && poseAligned &&
