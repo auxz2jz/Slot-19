@@ -66,6 +66,27 @@ class SilhouetteHullProcessor {
         return bounds.takeIf{it.valid() &&
             (it.right-it.left)*(it.bottom-it.top) in .004..0.80}
     }
+    private fun roiFromBounds(bounds:VoxelBounds,cam:VoxelCamera):FocusRect? {
+        val projected=ArrayList<Pair<Double,Double>>()
+        for(x in listOf(bounds.x0,bounds.x1))
+            for(y in listOf(bounds.y0,bounds.y1))
+                for(z in listOf(bounds.z0,bounds.z1))
+                    cam.project(x,y,z)?.let{projected.add(it)}
+        if(projected.size<6)return null
+        val minX=projected.minOf{it.first}
+        val maxX=projected.maxOf{it.first}
+        val minY=projected.minOf{it.second}
+        val maxY=projected.maxOf{it.second}
+        val dx=maxX-minX;val dy=maxY-minY
+        if(dx !in .035..0.85 || dy !in .035..0.85)return null
+        val box=FocusRect((minX-.03*dx).coerceIn(.002,.998),
+            (minY-.03*dy).coerceIn(.002,.998),
+            (maxX+.03*dx).coerceIn(.002,.998),
+            (maxY+.03*dy).coerceIn(.002,.998))
+        return box.takeIf{it.valid() &&
+            (it.right-it.left)*(it.bottom-it.top) in .004..0.80}
+    }
+
     fun build(run:ScanRun):JSONObject {
         require(run.isClosed && run.resultIsValid())
         check(OpenCVLoader.initLocal()) { "OpenCV unavailable" }
@@ -130,6 +151,9 @@ class SilhouetteHullProcessor {
                 "TWO_USER_SILHOUETTE_CAMERA_RAY_INTERSECTION"
                 else "SPARSE_FEATURE_ENVELOPE_FALLBACK")
                 .put("maskRayInitializationInconclusive",maskBounds==null)
+                .put("cameraGuidedObjectTracker",if(maskBounds!=null)
+                    "PROJECTED_3D_SILHOUETTE_VOLUME"
+                    else "SPARSE_FEATURE_ENVELOPE_FALLBACK")
             val mask0=masker.activeMask(run,first)
             val mask1=masker.activeMask(run,second)
             require(mask0!=null && mask1!=null) {
@@ -154,7 +178,8 @@ class SilhouetteHullProcessor {
                 val entry=JSONObject().put("frame",index)
                 try {
                     val cam=camera(row)
-                    val projected=roiFromPose(sparse,cam,roi0,origin)
+                    val projected=maskBounds?.let{roiFromBounds(it,cam)}
+                        ?:roiFromPose(sparse,cam,roi0,origin)
                     if(projected==null) {
                         entry.put("state","UNRELIABLE_PROJECTED_OBJECT_REGION")
                     } else {
