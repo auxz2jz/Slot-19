@@ -731,13 +731,25 @@ class SparseTwoViewAnalyzer {
                 .put("pnpMedianErrorPx",if(error.isFinite())error else JSONObject.NULL)
             if(!MultiViewPolicy.pnpAccepted(known.size,inlierRows.size,error))
                 return result.put("state","PNP_QUALITY_REJECTED") to emptyList()
+            Calib3d.Rodrigues(rvec,R)
+            val savedR=JSONArray()
+            for(row in 0..2)for(col in 0..2)savedR.put(R.get(row,col)[0])
+            val savedT=JSONArray()
+            for(row in 0..2)savedT.put(tvec.get(row,0)[0])
+            result.put("cameraRotationRowMajor",savedR)
+                .put("cameraTranslation",savedT)
+                .put("registeredWidth",third.colors.width)
+                .put("registeredHeight",third.colors.height)
+                .put("workingFocal",f)
+                .put("workingCx",cx).put("workingCy",cy)
+                .put("registrationCoordinateFrame",
+                    "ROI_FIRST_SCENE_ALIGNED_ONLY_WHEN_SHARED_POSE")
             val remaining=matches.filter {
                 it.queryIdx !in used && it.queryIdx !in base.anchorTracks
             }
             result.put("novelImageTracks",remaining.size)
             if(remaining.isEmpty())
                 return result.put("state","POSE_VALID_NO_NOVEL_TRACKS") to emptyList()
-            Calib3d.Rodrigues(rvec,R)
             val P0=projection1(f,cx,cy)
             val Pn=projection2(f,cx,cy,R,tvec)
             val a=MatOfPoint2f();val b=MatOfPoint2f();val X=Mat()
