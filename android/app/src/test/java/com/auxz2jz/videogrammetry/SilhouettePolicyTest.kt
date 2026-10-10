@@ -19,6 +19,19 @@ class SilhouettePolicyTest {
   assertEquals(1,SilhouettePolicy.carveSparse(points,listOf(full,full,full)).size)
   assertTrue(SilhouettePolicy.carveSparse(points,listOf(full,full)).isEmpty())
  }
+ @Test fun volumeStartsFromManualObjectSilhouetteRaysNotCheckerboardDots() {
+  val first=VoxelCamera.anchor(0,100,100)
+  val other=VoxelCamera(6,100,100,first.focal,first.cx,first.cy,
+   first.rotation,listOf(-1.0,0.0,0.0))
+  val a=FocusRect(.40,.40,.60,.60)
+  val b=FocusRect(.15,.40,.35,.60)
+  val bounds=SilhouetteBounds.fromTwoSilhouettes(a,b,first,other)
+  assertNotNull(bounds)
+  assertTrue(bounds!!.valid())
+  assertTrue(bounds.z0>0)
+  assertTrue(bounds.x0<0 && bounds.x1>0)
+  assertNull(SilhouetteBounds.fromTwoSilhouettes(a,a,first,first))
+ }
  @Test fun voxelBudgetBounded() {
   assertEquals(21952,SilhouettePolicy.MAX_VOXELS)
  }
