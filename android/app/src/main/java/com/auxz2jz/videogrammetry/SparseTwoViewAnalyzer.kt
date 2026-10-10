@@ -805,7 +805,7 @@ class SparseTwoViewAnalyzer {
         val report=JSONObject().put("operationId",id).put("runId",run.id)
             .put("appVersion","android-"+BuildConfig.VERSION_NAME)
             .put("sourcePair",pair)
-            .put("method","EARLY_ROI_MASKED_ORB_2400_INDEPENDENT_TWO_VIEW_POSE")
+            .put("method","EARLY_ROI_TWO_VIEW_SELECT_CAMERA_POSE")
             .put("reconstructedIndependently",true)
             .put("usesOriginalSceneCameraPose",false)
             .put("sameCoordinateSystemAsFullScene",false)
@@ -820,13 +820,33 @@ class SparseTwoViewAnalyzer {
         try {
             check(OpenCVLoader.initLocal()) { "OpenCV initialization failed" }
             val orb=ORB.create(2400)
+            val sceneReport=runCatching {
+                JSONObject(File(run.directory,"sparse_report.json").readText())
+                    .getJSONObject("selectedPair")
+            }.getOrNull()
+            val sharedPose=sceneReport?.takeIf {
+                it.optInt("indexA",-1)==actual.first &&
+                    it.optInt("indexB",-1)==actual.second &&
+                    it.has("cameraPoseRotationRowMajor") &&
+                    it.has("cameraPoseTranslation")
+            }
+            report.put("cameraPoseStrategy",if(sharedPose!=null)
+                "SAVED_FULL_SCENE_CAMERA_POSE" else "INDEPENDENT_ROI_ONLY_FALLBACK")
+                .put("sameCoordinateSystemAsFullScene",sharedPose!=null)
+                .put("usesOriginalSceneCameraPose",sharedPose!=null)
+                .put("method",if(sharedPose!=null)
+                    "ROI_ORB_WITH_REGISTERED_SCENE_CAMERA_POSE"
+                    else "EARLY_ROI_MASKED_ORB_INDEPENDENT_TWO_VIEW_POSE")
             val choice:Candidate
             try {
                 val a=features(checkedFile(run,images,actual.first),orb,boxA)
                 try {
                     val second=features(checkedFile(run,images,actual.second),orb,boxB)
-                    try { choice=candidate(a,second,actual.first,actual.second) }
-                    finally { second.release() }
+                    try {
+                        choice=if(sharedPose!=null)candidateWithScenePose(
+                            a,second,actual.first,actual.second,sharedPose)
+                            else candidate(a,second,actual.first,actual.second)
+                    } finally { second.release() }
                 } finally { a.release() }
             } finally { orb.clear() }
             report.put("featuresA",choice.report.optInt("featuresA"))
@@ -838,6 +858,31 @@ class SparseTwoViewAnalyzer {
                 .put("medianParallaxDeg",choice.report.opt("medianParallaxDeg"))
                 .put("medianReprojectionPx",choice.report.opt("medianReprojectionPx"))
             val points=choice.vertices
+            if(points.isNotEmpty()) {
+                require(choice.projections.size==points.size) {
+                    "ROI point-to-photo map must match reconstructed vertices"
+                }
+                val projections=JSONArray()
+                for((i,pt) in choice.projections.withIndex()) {
+                    projections.put(JSONObject().put("pointIndex",i)
+                        .put("firstX",pt.firstX).put("firstY",pt.firstY)
+                        .put("secondX",pt.secondX).put("secondY",pt.secondY))
+                }
+                val ply=SparsePolicy.asciiPly(points)
+                val hash=MessageDigest.getInstance("SHA-256")
+                    .digest(ply.toByteArray(Charsets.UTF_8))
+                    .joinToString("") { "%02x".format(it.toInt() and 255) }
+                val map=JSONObject().put("schemaVersion",1)
+                    .put("runId",run.id).put("sourcePair",pair)
+                    .put("plySha256",hash).put("pointCount",points.size)
+                    .put("projections",projections)
+                val mapTemp=File(run.directory,"early_object_point_projections.json.tmp")
+                mapTemp.writeText(map.toString(2))
+                check(mapTemp.renameTo(File(run.directory,
+                    "early_object_point_projections.json")))
+            } else {
+                File(run.directory,"early_object_point_projections.json").delete()
+            }
             report.put("objectCandidatePoints",points.size)
                 .put("originalScenePoints",JSONObject(
                     File(run.directory,"sparse_report.json").readText())
