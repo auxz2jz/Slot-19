@@ -813,7 +813,7 @@ class SparseTwoViewAnalyzer {
             .put("firstRectangle",selection.getJSONObject("firstRectangle"))
             .put("secondRectangle",selection.getJSONObject("secondRectangle"))
             .put("status","IN_PROGRESS")
-            .put("warning","Points re-detected within object boxes BEFORE triangulation. Separate estimated two-view pose; backgrounds inside boxes can pass. No mesh, true scale, bundle adjustment or globally shared coordinates.")
+            .put("warning","Object features detected BEFORE triangulation. A reliable scene camera pose is reused when compatible; otherwise a separate pose is estimated. No mesh, physical scale, bundle adjustment or automatic object segmentation.")
         run.event("OPERATION_START","EARLY_OBJECT_FOCUS",
             JSONObject().put("operationId",id).put("sourceFrameB",actual.second))
         val focusFile=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY)
