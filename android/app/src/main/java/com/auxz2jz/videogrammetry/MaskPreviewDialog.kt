@@ -17,18 +17,32 @@ import java.io.File
 fun MaskPreviewDialog(run:ScanRun,onDismiss:()->Unit) {
     val context=LocalContext.current
     val viewer=remember(run.id){SourcePhotoOverlayView(context)}
-    val manifest=remember(run.id) {
+    val sourceFrames=remember(run.id) {
         runCatching {
-            JSONObject(File(run.directory,"early_object_focus_selection.json").readText())
+            val raw=JSONObject(File(run.directory,
+                "early_object_focus_selection.json").readText())
                 .getJSONArray("sourcePair")
-        }.getOrNull()
+            val first=listOf(raw.getInt(0),raw.getInt(1))
+            val extra=runCatching {
+                val hull=JSONObject(File(run.directory,
+                    CloudArtifacts.SILHOUETTE_REPORT).readText())
+                val rows=hull.getJSONArray("trackedPhotoResults")
+                (0 until rows.length()).mapNotNull {i->
+                    val item=rows.getJSONObject(i)
+                    item.getInt("frame").takeIf {
+                        item.optString("state")=="AUTO_TRACKED_MASK_CANDIDATE"
+                    }
+                }
+            }.getOrDefault(emptyList())
+            (first+extra).distinct()
+        }.getOrDefault(emptyList())
     }
     var side by remember {mutableIntStateOf(0)}
     var engine by remember {mutableStateOf(MaskEnginePolicy.GRABCUT)}
     var opacity by remember {mutableFloatStateOf(.55f)}
     var selection by remember {mutableStateOf(false)}
     DisposableEffect(viewer){onDispose{viewer.release()}}
-    val index=if(manifest==null)-1 else manifest.optInt(side,-1)
+    val index=sourceFrames.getOrNull(side) ?: -1
     val photo=remember(run.id,index) {
         if(index<0)null else runCatching {
             PhotoPointOverlayLoader().sourceFile(run,index)
@@ -46,8 +60,13 @@ fun MaskPreviewDialog(run:ScanRun,onDismiss:()->Unit) {
                     "checkerboard squares or empty object surfaces mean this "+
                     "engine should NOT be trusted for reconstruction.")
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Button(onClick={side=0},enabled=side!=0){Text("Photo 1")}
-                    Button(onClick={side=1},enabled=side!=1){Text("Photo 2")}
+                    Button(onClick={side=(side-1).coerceAtLeast(0)},
+                        enabled=side>0){Text("Previous")}
+                    Text("Frame "+index+" ("+(side+1)+"/"+sourceFrames.size+")",
+                        modifier=Modifier.weight(1f))
+                    Button(onClick={side=(side+1).coerceAtMost(
+                        (sourceFrames.size-1).coerceAtLeast(0))},
+                        enabled=side<sourceFrames.lastIndex){Text("Next")}
                 }
                 Box {
                     OutlinedButton(onClick={selection=true}) {
