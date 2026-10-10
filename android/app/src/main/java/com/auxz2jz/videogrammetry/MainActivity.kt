@@ -1431,7 +1431,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     Text("Object reconstruction — independent early-ROI model",
                         style=MaterialTheme.typography.titleMedium)
                     Text("Features were detected INSIDE both object rectangles BEFORE 3D. "+
-                        "Its coordinates are independent from the full-scene cloud.")
+                        "It reuses the full-scene camera pose when source photos match; otherwise its pose is independent.")
                     Button(onClick={
                         coordinator.refreshClouds()
                         val chosen=coordinator.savedClouds.firstOrNull {
