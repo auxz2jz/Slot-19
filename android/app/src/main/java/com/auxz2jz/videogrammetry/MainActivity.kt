@@ -1640,6 +1640,76 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         Text("Export Multi-View PLY — Experimental")
                     }
 
+                    Text("Silhouette Engine — experimental object outline",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("Uses source-photo foreground masks and camera-guided masks "+
+                        "in registered extra views. Carves a coarse 28×28×28 voxel hull "+
+                        "and filters sparse XYZ by mask agreement. Needs THREE "+
+                        "plausible masked views; no accurate mesh or physical scale.")
+                    Button(onClick={coordinator.buildSilhouetteHull()},
+                        enabled=coordinator.maskReady && coordinator.multiviewAvailable &&
+                            !coordinator.silhouetteWorking && !coordinator.maskWorking &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                        Text(if(coordinator.silhouetteWorking)
+                            "Tracking and carving silhouette..." else
+                            "Test Silhouette Visual Hull + Mask Fusion")
+                    }
+                    if(coordinator.silhouetteWorking)LinearProgressIndicator(
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.silhouetteMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.SILHOUETTE_HULL_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    },enabled=coordinator.silhouetteReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("View Silhouette Voxel Hull — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {run->
+                            val name=ExportNames.silhouetteHullPly(
+                                BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("SILHOUETTE_HULL",name)
+                            silhouettePicker.launch(name)
+                        }
+                    },enabled=coordinator.silhouetteReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("Export Silhouette Voxel PLY")
+                    }
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.MASK_FUSION_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    },enabled=coordinator.fusionReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("View Mask-Verified Sparse Points — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {run->
+                            val name=ExportNames.maskFusionPly(
+                                BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("MASK_FUSION",name)
+                            maskFusionPicker.launch(name)
+                        }
+                    },enabled=coordinator.fusionReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("Export Mask-Verified Sparse PLY")
+                    }
+
                     Text("Filtered scene — legacy AFTER-reconstruction subset",
                         style=MaterialTheme.typography.titleMedium)
                     Text("Object Focus — experimental", style=MaterialTheme.typography.titleMedium)
