@@ -1508,7 +1508,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         Text("Compare candidate object masks before 3D. Check the "+
                             "actual silhouette in Photo Overlay; checkerboard can fool masks.")
                         Box {
-                            OutlinedButton(onClick={showMaskEngineChoices=true},
+                            Button(onClick={showMaskEngineChoices=true},
                                 enabled=!coordinator.maskWorking) {
                                 Text("Foreground engine: "+foregroundEngine+" ▾")
                             }
