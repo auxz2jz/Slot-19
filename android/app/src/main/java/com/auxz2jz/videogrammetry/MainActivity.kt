@@ -1709,8 +1709,9 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "tap Select Object BEFORE Sparse 3D. Photo 1 opens large. " +
             "Drag ONE finger around the object, use + or - and Move to pan if needed, tap Next Photo, " +
             "mark the SAME physical object in Photo 2, and tap Create. " +
-            "Then tap Analyze Sparse 3D — Two Views: full-scene pose and an independent ROI-priority ORB model run. " +
-            "The ROI object model uses its OWN two-view pose and coordinates, not a combined mesh. " +
+            "Then tap Analyze Sparse 3D — Two Views: full-scene camera pose first, " +
+            "then new object-feature matching with the SCENE pose reused when compatible. " +
+            "No metric scale or complete mesh is guaranteed. " +
             "Legacy Select Object in Two Photos AFTER analysis still provides a subtractive filter. " +
             "11. Test CALIBRATION with no video imported; use Export ALL Runs + Calibration Diagnostics " +
             "even if there are no completed runs. Check camera preview returns afterward. " +
@@ -1724,8 +1725,15 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "and export each to different filenames. Then tap Build Multi-View Object Cloud, " +
             "inspect registered third-camera count and NEW triangulated XYZ points, " +
             "compare ROI-first and multi-view from the same relative coordinate frame. " +
-            "point counts, then export each separate PLY. Use a bad/empty region to test " +
-            "the inconclusive path. New diagnostics should contain object_focus_report.json.") },
+            "14. Tap Overlay 3D Points on Original Photos. Switch FULL scene, filtered scene, " +
+            "and available ROI-first model. Try Photo 1 and Photo 2, fade source image from " +
+            "0 to 100 percent and increase/decrease green point size. Each dot must " +
+            "mark a saved source-image feature that produced a real XYZ point. " +
+            "15. If ROI-first succeeded, start exhaustive multi-view. The app tries " +
+            "up to 300 saved images; progress may take minutes. Check number of attempted " +
+            "photos, PnP camera registrations and newly triangulated points. " +
+            "This is NOT global 300-image SfM or guaranteed 360-degree capture. " +
+            "16. Export latest and ALL diagnostics, report any unexpected gray button.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
