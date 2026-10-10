@@ -763,11 +763,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
                     objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
                     reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
                     multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
-                    objectFocusMessage = if(early!=null)
+                    objectFocusMessage = if(early!=null) {
                         early.optString("status") + ": " +
                         early.optInt("objectCandidatePoints") +
-                        " independently reconstructed ROI points; different relative coordinate frame from full scene."
-                        else if (earlyObjectSelected)
+                        " ROI points. Camera pose: " +
+                        early.optString("cameraPoseStrategy","unknown") +
+                        (if(early.optBoolean("sameCoordinateSystemAsFullScene"))
+                            ". Aligned with the FULL-SCENE relative coordinates."
+                        else ". Independent relative coordinates; no metric scale.")
+                    } else if (earlyObjectSelected)
                             "Object-priority reconstruction inconclusive or failed. Full-scene PLY remains available. Export diagnostics."
                         else if(success)
                             "Optional: select object in both photos after reconstruction"
