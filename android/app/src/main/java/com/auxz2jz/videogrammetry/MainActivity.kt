@@ -959,9 +959,81 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun compareForegroundEngines(engine:String) {
+        val run=currentRun ?: return
+        if(!run.isClosed || !earlyObjectSelected) {
+            maskMessage="Select the object in BOTH real source photos first"
+            return
+        }
+        if(maskWorking || silhouetteWorking || multiviewWorking ||
+            sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            calibrating || importing || liveSampling || smartSampling) {
+            maskMessage="Finish the current processing step first"
+            return
+        }
+        maskWorking=true
+        maskMessage="Comparing Rectangle, GrabCut, low-texture and consensus on two photos..."
+        geometryWorker.execute {
+            try {
+                val report=ObjectMaskProcessor().compare(run,engine)
+                ui {
+                    maskReady=report.optBoolean("bothPhotosContainAcceptableMask")
+                    silhouetteReady=false;fusionReady=false
+                    maskMessage=report.optString("status")+": selected "+engine+
+                        ". Check the orange masks against the actual object in Photo Overlay. "+
+                        "Wrong mask = wrong 3D, regardless of point count."
+                    status="Segmentation engines compared; now rerun Analyze Sparse 3D "+
+                        "to apply mask-constrained feature detection."
+                }
+            } catch(ex:Exception) {
+                ui {maskMessage="Mask comparison failed: "+ex.javaClass.simpleName+
+                    ". Previous 3D outputs kept; export diagnostics."}
+            } finally {ui{maskWorking=false}}
+        }
+    }
+
+    fun buildSilhouetteHull() {
+        val run=currentRun ?: return
+        if(!run.isClosed || !maskReady || !multiviewAvailable) {
+            silhouetteMessage="First select object, run mask engines, reconstruct "+
+                "ROI-first and Multi-View, then make silhouette"
+            return
+        }
+        if(maskWorking || silhouetteWorking || multiviewWorking ||
+            sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            calibrating || importing || liveSampling || smartSampling) {
+            silhouetteMessage="Finish the current task first"
+            return
+        }
+        silhouetteWorking=true
+        silhouetteMessage="Tracking object masks into pose-registered photos "+
+            "and carving 28 x 28 x 28 voxel candidates..."
+        geometryWorker.execute {
+            try {
+                val report=SilhouetteHullProcessor().build(run)
+                ui {
+                    silhouetteReady=File(run.directory,
+                        CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
+                    fusionReady=File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
+                    savedClouds=repository.savedPlyEntries()
+                    silhouetteMessage=report.optString("status")+": "+
+                        report.optInt("cameraViewsWithMasks")+" views with masks; "+
+                        report.optInt("occupiedHullVoxelPoints")+" possible occupied voxels; "+
+                        report.optInt("retainedSparseObjectPoints")+" mask-consistent sparse points. "+
+                        "This is NOT a calibrated mesh; inspect original masks."
+                    status="Silhouette and mask/sparse fusion comparison saved."
+                }
+            } catch(ex:Exception) {
+                ui {silhouetteMessage="Silhouette experiment failed: "+
+                    ex.javaClass.simpleName+". See diagnostic report; clouds untouched."}
+            } finally {ui{silhouetteWorking=false}}
+        }
+    }
+
     fun analyzeObjectMultiView() {
         val run=currentRun ?: return
-        if(multiviewWorking || sparseAnalyzing || thirdViewAnalyzing ||
+        if(multiviewWorking || maskWorking || silhouetteWorking ||
+            sparseAnalyzing || thirdViewAnalyzing ||
             objectFocusWorking || geometryAnalyzing || importing ||
             liveSampling || smartSampling || calibrating) {
             multiviewMessage="Finish the active operation first"
@@ -1007,7 +1079,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     fun exportSeparateCloud(uri: Uri, name:String) {
         val run=currentRun ?: return
-        if(multiviewWorking || sparseAnalyzing || objectFocusWorking ||
+        if(multiviewWorking || silhouetteWorking || maskWorking ||
+            sparseAnalyzing || objectFocusWorking ||
             thirdViewAnalyzing || importing || liveSampling || smartSampling)return
         worker.execute {
             try {
