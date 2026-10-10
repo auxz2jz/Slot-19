@@ -172,6 +172,23 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var multiviewAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,CloudArtifacts.MULTIVIEW_PLY).isFile() } ?: false)
         private set
+    var maskReady by mutableStateOf(
+        currentRun?.let { File(it.directory,"foreground_mask_report.json").isFile } ?: false)
+        private set
+    var maskWorking by mutableStateOf(false)
+        private set
+    var maskMessage by mutableStateOf("Compare segmentation engines to separate object from checkerboard")
+        private set
+    var silhouetteReady by mutableStateOf(
+        currentRun?.let {File(it.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile} ?: false)
+        private set
+    var fusionReady by mutableStateOf(
+        currentRun?.let {File(it.directory,CloudArtifacts.MASK_FUSION_PLY).isFile} ?: false)
+        private set
+    var silhouetteWorking by mutableStateOf(false)
+        private set
+    var silhouetteMessage by mutableStateOf("Silhouette voxel prototype not run yet")
+        private set
     var multiviewWorking by mutableStateOf(false)
         private set
     var multiviewProgress by mutableStateOf(0f)
@@ -656,6 +673,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
             reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
             multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+            maskReady = File(run.directory,"foreground_mask_report.json").isFile
+            silhouetteReady = File(run.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
+            fusionReady = File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
@@ -734,6 +754,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         objectFocusAvailable = false
         reconstructedAvailable = false
         multiviewAvailable = false
+        silhouetteReady = false
+        fusionReady = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -877,6 +899,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             earlyObjectSelected=true
             reconstructedAvailable=false
             multiviewAvailable=false
+            maskReady=false
+            silhouetteReady=false
+            fusionReady=false
             savedClouds=repository.savedPlyEntries()
             objectFocusMessage="Object marked in both photos BEFORE 3D. Tap Analyze Sparse 3D for a new ROI-first model, then run registered multi-view."
             status="Early object boxes saved for frames "+
