@@ -77,8 +77,13 @@ class ObjectFocusProcessor {
         // results. Full scene and legacy scene-filter outputs are independent.
         for(name in listOf(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
             CloudArtifacts.ROI_RECONSTRUCTED_REPORT,
-            CloudArtifacts.MULTIVIEW_PLY,CloudArtifacts.MULTIVIEW_REPORT))
+            CloudArtifacts.MULTIVIEW_PLY,CloudArtifacts.MULTIVIEW_REPORT,
+            CloudArtifacts.SILHOUETTE_HULL_PLY,CloudArtifacts.MASK_FUSION_PLY,
+            CloudArtifacts.SILHOUETTE_REPORT,"foreground_mask_report.json"))
             File(run.directory,name).delete()
+        run.directory.listFiles()?.filter {
+            it.name.startsWith("foreground_") && it.name.endsWith(".png")
+        }?.forEach {it.delete()}
         run.event("ANALYSIS_RESULT","EARLY_OBJECT_SELECTION",
             JSONObject().put("sourceFrameA",pair.first).put("sourceFrameB",pair.second)
                 .put("status","SELECTED_BEFORE_RECONSTRUCTION"))
