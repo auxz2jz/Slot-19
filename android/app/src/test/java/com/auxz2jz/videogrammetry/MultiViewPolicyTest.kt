@@ -3,12 +3,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MultiViewPolicyTest {
-    @Test fun boundedExtraFramesExcludeBaseline() {
-        val a=MultiViewPolicy.extraFrames(300,6)
-        assertTrue(a.isNotEmpty())
-        assertTrue(a.size<=8)
-        assertTrue(a.all { it>6 && it<300 })
-        assertTrue(MultiViewPolicy.extraFrames(7,6).isEmpty())
+    @Test fun coversEntireAvailableVideoExceptAnchorAndSecondView() {
+        val all=MultiViewPolicy.extraFrames(300,6)
+        assertEquals(298,all.size)
+        assertEquals((1 until 300).filter{it!=6},all)
+        assertEquals((1 until 7).filter{it!=6},MultiViewPolicy.extraFrames(7,6))
+        assertEquals(300,MultiViewPolicy.extraFrames(800,6).size)
+        assertEquals(300,MultiViewPolicy.extraFrames(800,6).toSet().size)
     }
     @Test fun requiresRobustRegistrationAndValidNewPoint() {
         assertTrue(MultiViewPolicy.pnpAccepted(30,20,1.4))
