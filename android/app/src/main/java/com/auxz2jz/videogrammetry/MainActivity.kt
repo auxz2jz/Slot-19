@@ -944,13 +944,15 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
         multiviewWorking=true
         multiviewProgress=0f
-        multiviewMessage="Registering additional camera positions using matched 3D anchors..."
+        multiviewMessage="Checking EVERY saved video photo (up to 300), estimating "+
+            "camera pose where matching tracks exist. This may take several minutes..."
         geometryWorker.execute {
             try {
                 val result=SparseTwoViewAnalyzer().analyzeObjectMultiView(run) { done,total ->
                     ui {
                         multiviewProgress=if(total==0)0f else done.toFloat()/total
-                        multiviewMessage="Registered/checked "+done+" / "+total+" extra photographs"
+                        multiviewMessage="Examined "+done+" / "+total+
+                            " saved photographs (not every view will register)"
                     }
                 }
                 ui {
@@ -1016,6 +1018,12 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+
+    fun recordPhotoOverlay(action:String,model:String,photoIndex:Int) {
+        currentRun?.event("USER_ACTION","PHOTO_FEATURE_OVERLAY",
+            JSONObject().put("action",action).put("model",model)
+                .put("photoNumber",photoIndex))
+    }
 
     fun refreshClouds() { savedClouds = repository.savedPlyEntries() }
 
@@ -1216,6 +1224,7 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     val preview = remember { PreviewView(context) }
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
+    var showPhotoOverlay by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     var selectingEarlyObject by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
@@ -1399,6 +1408,22 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         progress = { coordinator.sparseProgress },
                         modifier = Modifier.fillMaxWidth())
                     Text(coordinator.sparseMessage)
+                    Text("Photo point overlay — show WHERE original 3D features "+
+                        "were detected on the two saved source photographs.")
+                    Button(onClick={
+                        coordinator.recordPhotoOverlay("OPEN",CloudArtifacts.SCENE_PLY,1)
+                        showPhotoOverlay=true
+                    },enabled=latest!=null && latest.isClosed &&
+                        coordinator.sparseAvailable && !coordinator.sparseAnalyzing &&
+                        !coordinator.importing) {
+                        Text("Overlay 3D Points on Original Photos")
+                    }
+                    Text("Processing details: video extraction saves up to 300 source "+
+                        "photos, but basic sparse reconstruction uses TWO. "+
+                        "The optional exhaustive multi-view pass TRIES up to 300 "+
+                        "saved photos; only successfully registered images "+
+                        "can contribute new XYZ points. This is not dense SfM.")
+
                     Text("Object reconstruction — independent early-ROI model",
                         style=MaterialTheme.typography.titleMedium)
                     Text("Features were detected INSIDE both object rectangles BEFORE 3D. "+
@@ -1428,9 +1453,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         !coordinator.multiviewWorking && !coordinator.sparseAnalyzing) {
                         Text("Export ROI-First Reconstruction PLY")
                     }
-                    Text("Multi-view experiment — adds new XYZ tracks from registered "+
-                        "third/fourth/etc. photos into one LOCAL ROI coordinate frame. "+
-                        "No bundle adjustment or physical dimensions.")
+                    Text("Multi-view experiment — tries to register up to 300 saved "+
+                        "photos to the original source frame and triangulates new XYZ "+
+                        "tracks from successful matches. Longer processing time. "+
+                        "No progressive track chaining, bundle adjustment or true metric scale.")
                     Button(onClick={coordinator.analyzeObjectMultiView()},
                         enabled=coordinator.reconstructedAvailable &&
                             !coordinator.multiviewWorking && !coordinator.sparseAnalyzing &&
@@ -1635,6 +1661,14 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 focusPhotos=null
                 if(selectingEarlyObject) coordinator.saveEarlyObjectFocus(first,second)
                 else coordinator.applyObjectFocus(first,second)
+            })
+    }
+
+    if(showPhotoOverlay && latest!=null) {
+        PhotoPointOverlayDialog(run=latest,
+            onDismiss={showPhotoOverlay=false},
+            onEvent={action,model,photo ->
+                coordinator.recordPhotoOverlay(action,model,photo)
             })
     }
 
