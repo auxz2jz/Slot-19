@@ -49,7 +49,8 @@ class SparseTwoViewAnalyzer {
         require(Regex("frame_[0-9]{4}\\.jpg").matches(name)) { "Unsafe image name" }
         return File(File(run.directory, "frames"), name)
     }
-    private fun features(file: File, orb: ORB, focus:FocusRect?=null): Features {
+    private fun features(file: File, orb: ORB, focus:FocusRect?=null,
+        foregroundMask:File?=null): Features {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid JPEG" }
@@ -84,6 +85,23 @@ class SparseTwoViewAnalyzer {
                     Imgproc.rectangle(mask,Point(x0.toDouble(),y0.toDouble()),
                         Point((x1-1).toDouble(),(y1-1).toDouble()),
                         org.opencv.core.Scalar(255.0),-1)
+                    if(foregroundMask!=null && foregroundMask.isFile) {
+                        val original=org.opencv.imgcodecs.Imgcodecs.imread(
+                            foregroundMask.absolutePath,
+                            org.opencv.imgcodecs.Imgcodecs.IMREAD_GRAYSCALE)
+                        val resized=Mat()
+                        try {
+                            require(!original.empty()) { "Foreground mask unavailable" }
+                            Imgproc.resize(original,resized,gray.size(),0.0,0.0,
+                                Imgproc.INTER_NEAREST)
+                            Imgproc.threshold(resized,resized,127.0,255.0,
+                                Imgproc.THRESH_BINARY)
+                            Core.bitwise_and(mask,resized,mask)
+                            require(Core.countNonZero(mask)>=20) {
+                                "Foreground mask excluded all useful pixels"
+                            }
+                        } finally {original.release();resized.release()}
+                    }
                     orb.detectAndCompute(gray,mask,keys,desc)
                 } finally { mask.release() }
             }
@@ -839,9 +857,17 @@ class SparseTwoViewAnalyzer {
                     else "EARLY_ROI_MASKED_ORB_INDEPENDENT_TWO_VIEW_POSE")
             val choice:Candidate
             try {
-                val a=features(checkedFile(run,images,actual.first),orb,boxA)
+                val maskEngine=ObjectMaskProcessor()
+                val maskA=maskEngine.activeMask(run,actual.first)
+                val maskB=maskEngine.activeMask(run,actual.second)
+                report.put("segmentationUsed",maskA!=null && maskB!=null)
+                    .put("segmentationMethod",if(maskA!=null && maskB!=null)
+                        "MASKED_OBJECT_ORB" else "RECTANGLE_ONLY_FALLBACK")
+                val a=features(checkedFile(run,images,actual.first),orb,boxA,
+                    if(maskA!=null && maskB!=null) maskA else null)
                 try {
-                    val second=features(checkedFile(run,images,actual.second),orb,boxB)
+                    val second=features(checkedFile(run,images,actual.second),orb,boxB,
+                        if(maskA!=null && maskB!=null)maskB else null)
                     try {
                         choice=if(sharedPose!=null)candidateWithScenePose(
                             a,second,actual.first,actual.second,sharedPose)
@@ -970,9 +996,16 @@ class SparseTwoViewAnalyzer {
             check(OpenCVLoader.initLocal()) { "OpenCV module unavailable" }
             val orb=ORB.create(2400)
             try {
-                val first=features(checkedFile(run,frames,expected.first),orb,a)
+                val active=ObjectMaskProcessor()
+                val mask0=active.activeMask(run,expected.first)
+                val mask1=active.activeMask(run,expected.second)
+                val masksUsed=mask0!=null && mask1!=null
+                out.put("segmentationUsed",masksUsed)
+                val first=features(checkedFile(run,frames,expected.first),orb,a,
+                    if(masksUsed)mask0 else null)
                 try {
-                    val second=features(checkedFile(run,frames,expected.second),orb,b)
+                    val second=features(checkedFile(run,frames,expected.second),orb,b,
+                        if(masksUsed)mask1 else null)
                     val scenePair=runCatching {
                         JSONObject(File(run.directory,"sparse_report.json").readText())
                             .getJSONObject("selectedPair")
