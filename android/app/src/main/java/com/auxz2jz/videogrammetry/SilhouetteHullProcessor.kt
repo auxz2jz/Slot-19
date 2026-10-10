@@ -123,6 +123,13 @@ class SilhouetteHullProcessor {
             val other=VoxelCamera(second,width,height,origin.focal,origin.cx,
                 origin.cy,r,t)
             val roi0=box(selections.getJSONObject("firstRectangle"))
+            val roi1=box(selections.getJSONObject("secondRectangle"))
+            val maskBounds=SilhouetteBounds.fromTwoSilhouettes(
+                roi0,roi1,origin,other)
+            report.put("voxelBoundsStrategy",if(maskBounds!=null)
+                "TWO_USER_SILHOUETTE_CAMERA_RAY_INTERSECTION"
+                else "SPARSE_FEATURE_ENVELOPE_FALLBACK")
+                .put("maskRayInitializationInconclusive",maskBounds==null)
             val mask0=masker.activeMask(run,first)
             val mask1=masker.activeMask(run,second)
             require(mask0!=null && mask1!=null) {
@@ -173,7 +180,7 @@ class SilhouetteHullProcessor {
             }
             val valid=SilhouettePolicy.validMasks(masks.size,
                 input.optBoolean("sameCoordinateSystemAsFullScene"))
-            val voxel=if(valid)SilhouettePolicy.carveVoxels(sparse,masks)
+            val voxel=if(valid)SilhouettePolicy.carveVoxels(sparse,masks,maskBounds)
                 else emptyList()
             val sparseOut=if(valid)SilhouettePolicy.carveSparse(allTracks,masks)
                 else emptyList()
