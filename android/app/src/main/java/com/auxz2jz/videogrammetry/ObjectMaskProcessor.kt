@@ -152,6 +152,19 @@ class ObjectMaskProcessor {
             val tmp=File(run.directory,"foreground_mask_report.json.tmp")
             tmp.writeText(report.toString(2))
             check(tmp.renameTo(File(run.directory,"foreground_mask_report.json")))
+            // A changed mask changes the features used by ROI and multi-view
+            // reconstruction. Never silently reuse models from an older engine.
+            for(name in listOf(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
+                CloudArtifacts.ROI_RECONSTRUCTED_REPORT,
+                CloudArtifacts.MULTIVIEW_PLY,CloudArtifacts.MULTIVIEW_REPORT,
+                CloudArtifacts.SILHOUETTE_HULL_PLY,CloudArtifacts.MASK_FUSION_PLY,
+                CloudArtifacts.SILHOUETTE_REPORT,
+                "early_object_point_projections.json"))
+                File(run.directory,name).delete()
+            run.event("STATE_TRANSITION","MASK_ENGINE_INVALIDATES_DERIVED_CLOUDS",
+                JSONObject().put("activeEngine",engine)
+                    .put("scenePlyPreserved",true)
+                    .put("legacyFilteredScenePreserved",true))
             run.event("ANALYSIS_RESULT","FOREGROUND_MASK_COMPARISON",
                 JSONObject().put("status",report.getString("status"))
                     .put("selectedEngine",engine))
