@@ -172,6 +172,18 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var multiviewAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,CloudArtifacts.MULTIVIEW_PLY).isFile() } ?: false)
         private set
+    var scenePoseAvailable by mutableStateOf(
+        currentRun?.let {
+            runCatching {JSONObject(File(it.directory,"scene_camera_track_report.json")
+                .readText()).optBoolean("sceneAligned")}.getOrDefault(false)
+        } ?: false)
+        private set
+    var scenePoseWorking by mutableStateOf(false)
+        private set
+    var scenePoseProgress by mutableStateOf(0f)
+        private set
+    var scenePoseMessage by mutableStateOf("No independent scene-camera tracking yet")
+        private set
     var maskReady by mutableStateOf(
         currentRun?.let { File(it.directory,"foreground_mask_report.json").isFile } ?: false)
         private set
@@ -674,6 +686,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
             reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
             multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
             maskReady = File(run.directory,"foreground_mask_report.json").isFile
+            scenePoseAvailable = runCatching {
+                JSONObject(File(run.directory,"scene_camera_track_report.json")
+                    .readText()).optBoolean("sceneAligned")
+            }.getOrDefault(false)
             silhouetteReady = File(run.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
             fusionReady = File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
             objectFocusMessage = "Select object regions after sparse analysis"
@@ -740,7 +756,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     /** Experimental relative two-view pose, unknown scale; no validated full scan. */
     fun analyzeSparseTwoView() {
         if (sparseAnalyzing || geometryAnalyzing || multiviewWorking ||
-            maskWorking || silhouetteWorking ||
+            scenePoseWorking || maskWorking || silhouetteWorking ||
             importing || liveSampling || smartSampling) {
             status = "Finish other captures/analyses before sparse 3D"
             return
@@ -755,6 +771,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         objectFocusAvailable = false
         reconstructedAvailable = false
         multiviewAvailable = false
+        scenePoseAvailable = false
+        File(run.directory,"scene_camera_track_report.json").delete()
         silhouetteReady = false
         fusionReady = false
         sparseProgress = 0f
@@ -967,7 +985,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
             return
         }
         if(maskWorking || silhouetteWorking || multiviewWorking ||
-            sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            scenePoseWorking || sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
             calibrating || importing || liveSampling || smartSampling) {
             maskMessage="Finish the current processing step first"
             return
@@ -997,11 +1015,50 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun registerSceneCamerasForSilhouette() {
+        val run=currentRun ?: return
+        if(!run.isClosed || !sparseAvailable || !earlyObjectSelected) {
+            scenePoseMessage="Run full scene sparse 3D and select object in source photos first"
+            return
+        }
+        if(scenePoseWorking || maskWorking || silhouetteWorking ||
+            sparseAnalyzing || geometryAnalyzing || thirdViewAnalyzing ||
+            multiviewWorking || calibrating || importing ||
+            liveSampling || smartSampling)return
+        scenePoseWorking=true
+        scenePoseProgress=0f
+        scenePoseMessage="Registering scene/background cameras independently of object texture..."
+        geometryWorker.execute {
+            try {
+                val report=SparseTwoViewAnalyzer().registerSceneCamerasForSilhouette(
+                    run) {done,total ->
+                    ui {
+                        scenePoseProgress=if(total==0)0f else done.toFloat()/total
+                        scenePoseMessage="Checked "+done+"/"+total+
+                            " video views for scene-based camera pose"
+                    }
+                }
+                ui {
+                    scenePoseAvailable=report.optBoolean("sceneAligned") &&
+                        report.optInt("registeredExtraViews")>0
+                    scenePoseMessage=report.optString("status")+": "+
+                        report.optInt("registeredExtraViews")+
+                        " additional camera views registered from checkerboard/scene. "+
+                        "No object ORB points are needed to create silhouette masks."
+                }
+            } catch(ex:Exception) {
+                ui {scenePoseMessage="Scene camera tracking failed: "+
+                    ex.javaClass.simpleName+". Export diagnostics."}
+            } finally {ui{scenePoseWorking=false}}
+        }
+    }
+
     fun buildSilhouetteHull() {
         val run=currentRun ?: return
-        if(!run.isClosed || !maskReady || !multiviewAvailable) {
-            silhouetteMessage="First select object, run mask engines, reconstruct "+
-                "ROI-first and Multi-View, then make silhouette"
+        if(!run.isClosed || !maskReady ||
+            (!scenePoseAvailable && !multiviewAvailable)) {
+            silhouetteMessage="First select object, compare mask engines and "+
+                "register scene cameras OR a scene-aligned Multi-View model"
             return
         }
         if(maskWorking || silhouetteWorking || multiviewWorking ||
@@ -1651,14 +1708,42 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         Text("Export Multi-View PLY — Experimental")
                     }
 
+                    Text("Scene camera tracking for TEXTURELESS objects",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("The checkerboard can locate the camera while the "+
+                        "selected foreground masks supply object silhouettes. "+
+                        "This does NOT require a successful object-only ORB cloud.")
+                    Button(onClick={coordinator.registerSceneCamerasForSilhouette()},
+                        enabled=coordinator.sparseAvailable &&
+                            coordinator.earlyObjectSelected &&
+                            !coordinator.scenePoseWorking &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.maskWorking &&
+                            !coordinator.silhouetteWorking &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                        Text(if(coordinator.scenePoseWorking)
+                            "Tracking scene camera positions..." else
+                            "Register Scene Cameras for Silhouette")
+                    }
+                    if(coordinator.scenePoseWorking)
+                        LinearProgressIndicator(
+                            progress={coordinator.scenePoseProgress},
+                            modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.scenePoseMessage)
+
                     Text("Silhouette Engine — experimental object outline",
                         style=MaterialTheme.typography.titleMedium)
-                    Text("Uses source-photo foreground masks and camera-guided masks "+
-                        "in registered extra views. Carves a coarse 28×28×28 voxel hull "+
+                    Text("Uses source-photo foreground masks and checkerboard/scene "+
+                        "camera poses even when the object has NO ORB features. "+
+                        "Tracks masks into registered views and carves 28×28×28 voxels. "+
                         "and filters sparse XYZ by mask agreement. Needs THREE "+
                         "plausible masked views; no accurate mesh or physical scale.")
                     Button(onClick={coordinator.buildSilhouetteHull()},
-                        enabled=coordinator.maskReady && coordinator.multiviewAvailable &&
+                        enabled=coordinator.maskReady &&
+                            (coordinator.scenePoseAvailable ||
+                                coordinator.multiviewAvailable) &&
+                            !coordinator.scenePoseWorking &&
                             !coordinator.silhouetteWorking && !coordinator.maskWorking &&
                             !coordinator.multiviewWorking &&
                             !coordinator.sparseAnalyzing &&

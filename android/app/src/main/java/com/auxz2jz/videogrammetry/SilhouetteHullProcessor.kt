@@ -96,35 +96,44 @@ class SilhouetteHullProcessor {
         require(selections.getString("runId")==run.id)
         val pair=selections.getJSONArray("sourcePair")
         val first=pair.getInt(0);val second=pair.getInt(1)
-        val input=JSONObject(File(run.directory,CloudArtifacts.MULTIVIEW_REPORT).readText())
-        require(input.getString("runId")==run.id &&
-            input.optBoolean("sameCoordinateSystemAsFullScene") &&
-            input.optString("status")=="MULTIVIEW_SPARSE_CANDIDATE") {
-            "Hull needs scene-aligned, PnP-registered multi-view reconstruction"
+        val sceneTrack=File(run.directory,"scene_camera_track_report.json")
+        val independentScenePose=sceneTrack.isFile
+        val input=JSONObject(File(run.directory,if(independentScenePose)
+            "scene_camera_track_report.json" else CloudArtifacts.MULTIVIEW_REPORT)
+            .readText())
+        val poseAligned=if(independentScenePose)input.optBoolean("sceneAligned")
+            else input.optBoolean("sameCoordinateSystemAsFullScene")
+        require(input.getString("runId")==run.id && poseAligned &&
+            (if(independentScenePose)
+                input.optString("status")=="SCENE_CAMERA_POSES_AVAILABLE"
+                else input.optString("status")=="MULTIVIEW_SPARSE_CANDIDATE")) {
+            "Register at least one EXTRA scene camera pose or run aligned Multi-View"
         }
         val scene=JSONObject(File(run.directory,"sparse_report.json").readText())
             .getJSONObject("selectedPair")
         require(scene.optInt("indexA",-1)==first &&
             scene.optInt("indexB",-1)==second) { "Source camera pair mismatch" }
         val baseCloud=File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY)
-        require(baseCloud.isFile)
-        val sparse=baseCloud.inputStream().use {
-            PlyParser.parse(it,"ROI-first source point cloud")
-        }.vertices.map {SparseVertex(it.x.toDouble(),it.y.toDouble(),it.z.toDouble(),
-            it.r,it.g,it.b)}
-        require(sparse.size>=24) { "Not enough ROI baseline geometry" }
-        require(input.optBoolean("sameCoordinateSystemAsRoiTwoView")) {
-            "Multi-view cloud and ROI baseline do not share coordinates"
-        }
-        val multiFile=File(run.directory,CloudArtifacts.MULTIVIEW_PLY)
-        require(multiFile.isFile) { "Missing registered multi-view cloud" }
-        val allTracks=multiFile.inputStream().use {
-            PlyParser.parse(it,"PnP-registered multi-view point cloud")
+        val sparse=if(baseCloud.isFile) baseCloud.inputStream().use {
+            PlyParser.parse(it,"ROI-first sparse points")
+        }.vertices.map{SparseVertex(it.x.toDouble(),it.y.toDouble(),it.z.toDouble(),
+            it.r,it.g,it.b)} else emptyList()
+        val registered=File(run.directory,CloudArtifacts.MULTIVIEW_PLY)
+        val fusionFile=if(!independentScenePose && registered.isFile)registered
+            else File(run.directory,CloudArtifacts.SCENE_PLY)
+        require(fusionFile.isFile) { "Full-scene XYZ required for optional mask fusion" }
+        val allTracks=fusionFile.inputStream().use {
+            PlyParser.parse(it,"Mask-gated scene and/or registered sparse points")
         }.vertices.map{SparseVertex(it.x.toDouble(),it.y.toDouble(),it.z.toDouble(),
             it.r,it.g,it.b)}
         val report=JSONObject().put("runId",run.id)
             .put("appVersion","android-"+BuildConfig.VERSION_NAME)
-            .put("method","CAMERA_GUIDED_SEGMENTATION_AND_VOXEL_VISUAL_HULL")
+            .put("method","SCENE_POSE_GUIDED_SILHOUETTE_VOXEL_HULL")
+            .put("cameraTrackingSource",if(independentScenePose)
+                "FULL_SCENE_BACKGROUND_FEATURE_PNP"
+                else "ROI_MULTIVIEW_PNP")
+            .put("objectORBRequired",false)
+            .put("sparseFusionInput",fusionFile.name)
             .put("scale","UNKNOWN_ARBITRARY_UNITS")
             .put("status","IN_PROGRESS")
             .put("warning","Experimental coarse voxel hull based on automatic masks and estimated camera positions. Masks and sparse bounds may include checkerboard. Not a watertight/accurate mesh; source image silhouette tracking is approximate.")
@@ -203,9 +212,9 @@ class SilhouetteHullProcessor {
                 }
                 tracked.put(entry)
             }
-            val valid=SilhouettePolicy.validMasks(masks.size,
-                input.optBoolean("sameCoordinateSystemAsFullScene"))
-            val voxel=if(valid)SilhouettePolicy.carveVoxels(sparse,masks,maskBounds)
+            val valid=SilhouettePolicy.validMasks(masks.size,poseAligned)
+            val voxel=if(valid && (maskBounds!=null || sparse.size>=24))
+                SilhouettePolicy.carveVoxels(sparse,masks,maskBounds)
                 else emptyList()
             val sparseOut=if(valid)SilhouettePolicy.carveSparse(allTracks,masks)
                 else emptyList()

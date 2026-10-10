@@ -800,6 +800,116 @@ class SparseTwoViewAnalyzer {
     }
 
     /**
+     * Scene camera registration INDEPENDENT of object texture. The checkerboard
+     * is allowed to position the cameras; user foreground masks are reserved
+     * for the later silhouette voxel-carving stage. No object PLY is generated.
+     */
+    fun registerSceneCamerasForSilhouette(run:ScanRun,
+        progress:(Int,Int)->Unit):JSONObject {
+        require(run.isClosed && run.resultIsValid())
+        val sceneReport=JSONObject(File(run.directory,"sparse_report.json").readText())
+        val original=sceneReport.getJSONObject("selectedPair")
+        val selection=JSONObject(File(run.directory,
+            "early_object_focus_selection.json").readText())
+        require(selection.getString("runId")==run.id)
+        val wanted=selection.getJSONArray("sourcePair")
+        val indexA=original.getInt("indexA")
+        val indexB=original.getInt("indexB")
+        require(wanted.getInt(0)==indexA && wanted.getInt(1)==indexB) {
+            "Selected silhouettes must correspond to scene source photos"
+        }
+        val list=JSONObject(File(run.directory,"manifest.json").readText())
+            .getJSONArray("frames")
+        val indices=MultiViewPolicy.extraFrames(list.length(),indexB)
+        val out=JSONObject().put("runId",run.id)
+            .put("appVersion","android-"+BuildConfig.VERSION_NAME)
+            .put("method","SCENE_FEATURE_PNP_POSE_TRACKING_FOR_SILHOUETTES")
+            .put("sourcePair",wanted)
+            .put("sceneAligned",false)
+            .put("objectFeaturesRequired",false)
+            .put("warning","Camera pose is estimated using all-scene features (including checkerboard), not object features. Registered views are not proof of correct foreground masks.")
+            .put("status","IN_PROGRESS")
+        run.event("OPERATION_START","SCENE_CAMERA_REGISTRATION",
+            JSONObject().put("candidateExtraPhotos",indices.size))
+        val frameReports=JSONArray()
+        try {
+            check(OpenCVLoader.initLocal()) { "OpenCV unavailable" }
+            val orb=ORB.create(1800)
+            try {
+                val a=features(checkedFile(run,list,indexA),orb)
+                try {
+                    val other=features(checkedFile(run,list,indexB),orb)
+                    val baseline=try {candidate(a,other,indexA,indexB)}
+                        finally {other.release()}
+                    val accepted=baseline.vertices.isNotEmpty() &&
+                        baseline.anchorTracks.size>=MultiViewPolicy.MIN_TRACKS
+                    out.put("baselineVerdict",baseline.report.optString("verdict"))
+                        .put("baselineRecalculatedPoints",baseline.vertices.size)
+                    if(accepted) {
+                        val savedR=original.getJSONArray("cameraPoseRotationRowMajor")
+                        val freshR=baseline.report.getJSONArray("cameraPoseRotationRowMajor")
+                        val savedT=original.getJSONArray("cameraPoseTranslation")
+                        val freshT=baseline.report.getJSONArray("cameraPoseTranslation")
+                        val rotationDrift=(0 until 9).maxOf {
+                            kotlin.math.abs(savedR.getDouble(it)-freshR.getDouble(it))
+                        }
+                        val t1=(0 until 3).map{savedT.getDouble(it)}
+                        val t2=(0 until 3).map{freshT.getDouble(it)}
+                        val cosine=t1.indices.sumOf{t1[it]*t2[it]}/
+                            kotlin.math.sqrt(t1.sumOf{it*it}*t2.sumOf{it*it})
+                        out.put("baselinePoseRotationMaxDeviation",rotationDrift)
+                            .put("baselinePoseTranslationCosine",cosine)
+                        if(rotationDrift<.05 && cosine>.995) {
+                            val used=a.keys.indices.toMutableSet()
+                            var supported=0
+                            for((i,idx) in indices.withIndex()) {
+                                val third=features(checkedFile(run,list,idx),orb)
+                                try {
+                                    val row=try {
+                                        expandRegisteredView(a,third,baseline,idx,used).first
+                                    } catch(ex:Exception) {
+                                        JSONObject().put("frame",idx)
+                                            .put("state","POSE_ESTIMATION_ERROR")
+                                            .put("errorType",ex.javaClass.simpleName)
+                                    }
+                                    if(row.has("cameraRotationRowMajor"))supported++
+                                    frameReports.put(row)
+                                    run.event("ANALYSIS_PROGRESS","SCENE_CAMERA_REGISTRATION",
+                                        JSONObject().put("done",i+1)
+                                            .put("total",indices.size)
+                                            .put("poseAccepted",supported))
+                                    progress(i+1,indices.size)
+                                } finally {third.release()}
+                            }
+                            out.put("registeredExtraViews",supported)
+                                .put("sceneAligned",true)
+                                .put("status",if(supported>=1)
+                                    "SCENE_CAMERA_POSES_AVAILABLE" else
+                                    "INCONCLUSIVE_NO_EXTRA_REGISTERED_CAMERAS")
+                        } else out.put("status","INCONCLUSIVE_SCENE_POSE_DRIFT")
+                    } else out.put("status","INCONCLUSIVE_BASELINE_RECONSTRUCTION")
+                } finally {a.release()}
+            } finally {orb.clear()}
+            out.put("attemptedExtraViews",frameReports.length())
+                .put("extraViewResults",frameReports)
+            val tmp=File(run.directory,"scene_camera_track_report.json.tmp")
+            tmp.writeText(out.toString(2))
+            check(tmp.renameTo(File(run.directory,"scene_camera_track_report.json")))
+            run.event("ANALYSIS_RESULT","SCENE_CAMERA_REGISTRATION",
+                JSONObject().put("status",out.optString("status"))
+                    .put("registered",out.optInt("registeredExtraViews")))
+            return out
+        } catch(ex:Exception) {
+            out.put("status","FAILED").put("errorType",ex.javaClass.simpleName)
+            File(run.directory,"scene_camera_track_last_failure.json")
+                .writeText(out.toString(2))
+            run.event("ERROR","SCENE_CAMERA_REGISTRATION",
+                JSONObject().put("errorType",ex.javaClass.simpleName))
+            throw ex
+        }
+    }
+
+    /**
      * Optional early-selected target: independently detect ORB points INSIDE
      * two user rectangles, then match/solve/triangulate a fresh object-priority
      * candidate. Scene PLY remains untouched and retains background pose cues.
