@@ -32,6 +32,19 @@ class SilhouettePolicyTest {
   assertTrue(bounds.x0<0 && bounds.x1>0)
   assertNull(SilhouetteBounds.fromTwoSilhouettes(a,a,first,first))
  }
+ @Test fun texturelessObjectCanHaveSilhouetteHullFromCamerasOnly() {
+  val first=VoxelCamera.anchor(0,100,100)
+  val other=VoxelCamera(6,100,100,first.focal,first.cx,first.cy,
+   first.rotation,listOf(-1.0,0.0,0.0))
+  val third=VoxelCamera(9,100,100,first.focal,first.cx,first.cy,
+   first.rotation,listOf(.1,0.0,0.0))
+  val mask=ByteArray(10000){255.toByte()}
+  val views=listOf(VoxelMask(first,mask,100,100),
+   VoxelMask(other,mask,100,100),VoxelMask(third,mask,100,100))
+  val box=VoxelBounds(-.1,.1,-.1,.1,1.0,2.0)
+  assertTrue(SilhouettePolicy.carveVoxels(emptyList(),views,box).isNotEmpty())
+  assertTrue(SilhouettePolicy.carveVoxels(emptyList(),views).isEmpty())
+ }
  @Test fun voxelBudgetBounded() {
   assertEquals(21952,SilhouettePolicy.MAX_VOXELS)
  }
