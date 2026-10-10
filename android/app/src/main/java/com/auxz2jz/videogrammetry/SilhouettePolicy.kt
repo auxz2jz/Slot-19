@@ -49,7 +49,8 @@ object SilhouettePolicy {
         if(masks.size<MIN_REGISTERED_MASK_VIEWS)return emptyList()
         return volume.filter {v->masks.all{it.contains(v.x,v.y,v.z)}}
     }
-    fun carveVoxels(baseline:List<SparseVertex>,masks:List<VoxelMask>):List<SparseVertex> {
+    fun carveVoxels(baseline:List<SparseVertex>,masks:List<VoxelMask>,
+        silhouetteBounds:VoxelBounds?=null):List<SparseVertex> {
         if(!validMasks(masks.size,true) || baseline.size<24)return emptyList()
         fun ext(values:List<Double>):Pair<Double,Double> {
             val sorted=values.sorted()
@@ -58,8 +59,12 @@ object SilhouettePolicy {
             val span=max(0.02,hi-lo)
             return lo-.30*span to hi+.30*span
         }
-        val bounds=listOf(ext(baseline.map{it.x}),ext(baseline.map{it.y}),
-            ext(baseline.map{it.z}))
+        val bounds=if(silhouetteBounds?.valid()==true)
+            listOf(silhouetteBounds.x0 to silhouetteBounds.x1,
+                silhouetteBounds.y0 to silhouetteBounds.y1,
+                silhouetteBounds.z0 to silhouetteBounds.z1)
+            else listOf(ext(baseline.map{it.x}),ext(baseline.map{it.y}),
+                ext(baseline.map{it.z}))
         val carved=ArrayList<SparseVertex>()
         for(zi in 0 until GRID)for(yi in 0 until GRID)for(xi in 0 until GRID) {
             val x=bounds[0].first+(xi+.5)*(bounds[0].second-bounds[0].first)/GRID
