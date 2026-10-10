@@ -740,6 +740,7 @@ class CaptureCoordinator(private val activity: MainActivity) {
     /** Experimental relative two-view pose, unknown scale; no validated full scan. */
     fun analyzeSparseTwoView() {
         if (sparseAnalyzing || geometryAnalyzing || multiviewWorking ||
+            maskWorking || silhouetteWorking ||
             importing || liveSampling || smartSampling) {
             status = "Finish other captures/analyses before sparse 3D"
             return
@@ -978,10 +979,14 @@ class CaptureCoordinator(private val activity: MainActivity) {
                 val report=ObjectMaskProcessor().compare(run,engine)
                 ui {
                     maskReady=report.optBoolean("bothPhotosContainAcceptableMask")
+                    reconstructedAvailable=false
+                    multiviewAvailable=false
                     silhouetteReady=false;fusionReady=false
+                    savedClouds=repository.savedPlyEntries()
                     maskMessage=report.optString("status")+": selected "+engine+
                         ". Check the orange masks against the actual object in Photo Overlay. "+
-                        "Wrong mask = wrong 3D, regardless of point count."
+                        "Changing the mask invalidated only ROI/multi-view/hull outputs; "+
+                        "rerun Sparse 3D and Multi-View. Full scene kept."
                     status="Segmentation engines compared; now rerun Analyze Sparse 3D "+
                         "to apply mask-constrained feature detection."
                 }
