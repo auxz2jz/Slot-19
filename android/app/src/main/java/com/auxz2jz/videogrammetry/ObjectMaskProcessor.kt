@@ -109,6 +109,10 @@ class ObjectMaskProcessor {
             listOf(rgba,rgb,gray,lap,magnitude,smooth,gm,bg,fg).forEach{it.release()}
         }
     }
+    /** Track a registered 3D ROI estimate into another saved photo, and segment it. */
+    fun compareTrackedView(run:ScanRun,frame:Int,box:FocusRect):JSONObject =
+        analyzeFrame(run,frame,box)
+
     fun compare(run:ScanRun,engine:String):JSONObject {
         require(run.isClosed && run.resultIsValid())
         require(engine in MaskEnginePolicy.engineNames)
