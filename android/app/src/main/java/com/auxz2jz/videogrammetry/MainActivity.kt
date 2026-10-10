@@ -1708,14 +1708,42 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         Text("Export Multi-View PLY — Experimental")
                     }
 
+                    Text("Scene camera tracking for TEXTURELESS objects",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("The checkerboard can locate the camera while the "+
+                        "selected foreground masks supply object silhouettes. "+
+                        "This does NOT require a successful object-only ORB cloud.")
+                    Button(onClick={coordinator.registerSceneCamerasForSilhouette()},
+                        enabled=coordinator.sparseAvailable &&
+                            coordinator.earlyObjectSelected &&
+                            !coordinator.scenePoseWorking &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.maskWorking &&
+                            !coordinator.silhouetteWorking &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                        Text(if(coordinator.scenePoseWorking)
+                            "Tracking scene camera positions..." else
+                            "Register Scene Cameras for Silhouette")
+                    }
+                    if(coordinator.scenePoseWorking)
+                        LinearProgressIndicator(
+                            progress={coordinator.scenePoseProgress},
+                            modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.scenePoseMessage)
+
                     Text("Silhouette Engine — experimental object outline",
                         style=MaterialTheme.typography.titleMedium)
-                    Text("Uses source-photo foreground masks and camera-guided masks "+
-                        "in registered extra views. Carves a coarse 28×28×28 voxel hull "+
+                    Text("Uses source-photo foreground masks and checkerboard/scene "+
+                        "camera poses even when the object has NO ORB features. "+
+                        "Tracks masks into registered views and carves 28×28×28 voxels. "+
                         "and filters sparse XYZ by mask agreement. Needs THREE "+
                         "plausible masked views; no accurate mesh or physical scale.")
                     Button(onClick={coordinator.buildSilhouetteHull()},
-                        enabled=coordinator.maskReady && coordinator.multiviewAvailable &&
+                        enabled=coordinator.maskReady &&
+                            (coordinator.scenePoseAvailable ||
+                                coordinator.multiviewAvailable) &&
+                            !coordinator.scenePoseWorking &&
                             !coordinator.silhouetteWorking && !coordinator.maskWorking &&
                             !coordinator.multiviewWorking &&
                             !coordinator.sparseAnalyzing &&
