@@ -242,6 +242,15 @@ class SparseTwoViewAnalyzer {
                     .put("medianReprojectionPx",if(medianError.isFinite())medianError else JSONObject.NULL)
                     .put("verdict",verdict)
                 val valid=verdict=="TWO_VIEW_SPARSE_CANDIDATE"
+                if(valid) {
+                    val rot=JSONArray()
+                    for(row in 0..2) for(col in 0..2)rot.put(R.get(row,col)[0])
+                    val trans=JSONArray()
+                    for(row in 0..2)trans.put(t.get(row,0)[0])
+                    report.put("cameraPoseRotationRowMajor",rot)
+                        .put("cameraPoseTranslation",trans)
+                        .put("poseCoordinates","ANCHOR_FRAME_0_UNIT_BASELINE")
+                }
                 val score=if(valid) points.size * min(medianAngle,8.0)/8.0 else 0.0
                 return Candidate(report,if(valid)points else emptyList(),score,
                     if(valid)tracks else emptyMap(),
@@ -256,6 +265,108 @@ class SparseTwoViewAnalyzer {
         }
     }
 
+
+    /**
+     * ROI points triangulated using the trusted WHOLE-SCENE camera pose.
+     * This avoids estimating a new ill-conditioned pose from a tiny object.
+     * Returned XYZ and the full-scene cloud share the same local coordinates.
+     */
+    private fun candidateWithScenePose(a: Features,b: Features,
+        indexA:Int,indexB:Int,scene:JSONObject):Candidate {
+        val out=JSONObject().put("indexA",indexA).put("indexB",indexB)
+            .put("featuresA",a.keys.size).put("featuresB",b.keys.size)
+            .put("cameraPoseSource","SAVED_FULL_SCENE_ESTIMATE")
+            .put("objectRoiPoseEstimatedIndependently",false)
+        if(a.colors.width!=b.colors.width || a.colors.height!=b.colors.height ||
+            a.desc.empty() || b.desc.empty())
+            return Candidate(out.put("verdict","INCOMPATIBLE_SOURCE_FEATURES"),
+                emptyList(),0.0)
+        val rot=scene.getJSONArray("cameraPoseRotationRowMajor")
+        val trans=scene.getJSONArray("cameraPoseTranslation")
+        require(rot.length()==9 && trans.length()==3) { "Missing original camera pose" }
+        val R=Mat(3,3,CvType.CV_64F)
+        val t=Mat(3,1,CvType.CV_64F)
+        val matcher=BFMatcher.create(Core.NORM_HAMMING,false)
+        val raw=ArrayList<MatOfDMatch>()
+        val good=ArrayList<org.opencv.core.DMatch>()
+        try {
+            for(i in 0..2) {
+                for(j in 0..2)R.put(i,j,rot.getDouble(3*i+j))
+                t.put(i,0,trans.getDouble(i))
+            }
+            matcher.knnMatch(a.desc,b.desc,raw,2)
+            val usedSecond=HashSet<Int>()
+            for(group in raw) {
+                val pair=group.toArray()
+                if(pair.size>=2 && pair[0].distance<0.75f*pair[1].distance &&
+                    usedSecond.add(pair[0].trainIdx))good.add(pair[0])
+            }
+            out.put("ratioMatches",good.size)
+            if(good.size<SparsePolicy.MIN_RATIO_MATCHES)
+                return Candidate(out.put("verdict","INSUFFICIENT_MATCHES"),
+                    emptyList(),0.0)
+            val focal=0.95*maxOf(a.colors.width,a.colors.height)
+            val cx=(a.colors.width-1)/2.0
+            val cy=(a.colors.height-1)/2.0
+            val P0=projection1(focal,cx,cy)
+            val P1=projection2(focal,cx,cy,R,t)
+            val pa=MatOfPoint2f();val pb=MatOfPoint2f();val X=Mat()
+            try {
+                pa.fromList(good.map { a.keys[it.queryIdx].pt })
+                pb.fromList(good.map { b.keys[it.trainIdx].pt })
+                Calib3d.triangulatePoints(P0,P1,pa,pb,X)
+                val vertices=ArrayList<SparseVertex>()
+                val tracks=HashMap<Int,SparseVertex>()
+                val correspondences=ArrayList<FocusProjection>()
+                val angles=ArrayList<Double>();val errors=ArrayList<Double>()
+                for(i in good.indices) {
+                    val homogeneous=DoubleArray(4) { row ->
+                        X.get(row,i)?.firstOrNull() ?: Double.NaN
+                    }
+                    val w=homogeneous[3]
+                    if(!w.isFinite() || kotlin.math.abs(w)<1e-9)continue
+                    val x=homogeneous[0]/w;val y=homogeneous[1]/w
+                    val z=homogeneous[2]/w
+                    if(!x.isFinite() || !y.isFinite() || !z.isFinite() || z<=0.01 || z>1e5)continue
+                    val x2=R.get(0,0)[0]*x+R.get(0,1)[0]*y+R.get(0,2)[0]*z+t.get(0,0)[0]
+                    val y2=R.get(1,0)[0]*x+R.get(1,1)[0]*y+R.get(1,2)[0]*z+t.get(1,0)[0]
+                    val z2=R.get(2,0)[0]*x+R.get(2,1)[0]*y+R.get(2,2)[0]*z+t.get(2,0)[0]
+                    if(z2<=0.01)continue
+                    val u=a.keys[good[i].queryIdx].pt
+                    val v=b.keys[good[i].trainIdx].pt
+                    val error=(hypot(focal*x/z+cx-u.x,focal*y/z+cy-u.y)+
+                        hypot(focal*x2/z2+cx-v.x,focal*y2/z2+cy-v.y))/2
+                    val angle=angleDegrees(u,v,R,focal,cx,cy)
+                    if(!error.isFinite() || error>3.0 || !angle.isFinite() ||
+                        angle<0.8 || angle>30.0)continue
+                    val rgb=a.colors.getPixel(u.x.toInt().coerceIn(0,a.colors.width-1),
+                        u.y.toInt().coerceIn(0,a.colors.height-1))
+                    val point=SparseVertex(x,y,z,Color.red(rgb),Color.green(rgb),Color.blue(rgb))
+                    vertices.add(point)
+                    tracks[good[i].queryIdx]=point
+                    correspondences.add(FocusProjection(u.x/a.colors.width,
+                        u.y/a.colors.height,v.x/b.colors.width,v.y/b.colors.height))
+                    angles.add(angle);errors.add(error)
+                }
+                val medAngle=median(angles);val medError=median(errors)
+                val verdict=SparsePolicy.verdict(good.size,good.size,vertices.size,
+                    medAngle,medError)
+                out.put("triangulatedPositiveDepth",vertices.size)
+                    .put("medianParallaxDeg",if(medAngle.isFinite())medAngle else JSONObject.NULL)
+                    .put("medianReprojectionPx",if(medError.isFinite())medError else JSONObject.NULL)
+                    .put("verdict",verdict)
+                val valid=verdict=="TWO_VIEW_SPARSE_CANDIDATE"
+                return Candidate(out,if(valid)vertices else emptyList(),
+                    if(valid)vertices.size.toDouble() else 0.0,
+                    if(valid)tracks else emptyMap(),
+                    if(valid)correspondences else emptyList(),
+                    a.colors.width,a.colors.height,b.colors.width,b.colors.height)
+            } finally { P0.release();P1.release();pa.release();pb.release();X.release() }
+        } finally {
+            raw.forEach { it.release() }
+            matcher.clear();R.release();t.release()
+        }
+    }
 
     /**
      * Rebuild the original source pair without touching its saved PLY, then
