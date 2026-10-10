@@ -1942,7 +1942,15 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "up to 300 saved images; progress may take minutes. Check number of attempted " +
             "photos, PnP camera registrations and newly triangulated points. " +
             "This is NOT global 300-image SfM or guaranteed 360-degree capture. " +
-            "16. Export latest and ALL diagnostics, report any unexpected gray button.") },
+            "16. v0.12: AFTER choosing the object, run Compare Foreground Mask Engines. " +
+            "Compare BOX_BASELINE, GRABCUT, LOW_TEXTURE and CONSENSUS in the Photo Overlay: " +
+            "orange should be on the object rather than the checkerboard. If not, record failure. " +
+            "17. Rerun Sparse 3D to apply the selected foreground mask to ROI ORB. " +
+            "Then run Multi-View for up to 300 photos; check accepted camera views and new XYZ. " +
+            "18. If scene-aligned multi-view is available, Test Silhouette Visual Hull + Mask Fusion. " +
+            "A coarse voxel hull needs at least three masks in camera-registered views. " +
+            "Inspect silhouette and mask-consistent sparse outputs separately, without claiming accurate mesh. " +
+            "19. Export latest and ALL diagnostics and distinct PLYs; compare against the actual object.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")
