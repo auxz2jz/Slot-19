@@ -1317,6 +1317,14 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if(uri!=null)
         coordinator.exportSeparateCloud(uri,CloudArtifacts.MULTIVIEW_PLY) }
+    val silhouettePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) {uri->if(uri!=null)coordinator.exportSeparateCloud(
+        uri,CloudArtifacts.SILHOUETTE_HULL_PLY)}
+    val maskFusionPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) {uri->if(uri!=null)coordinator.exportSeparateCloud(
+        uri,CloudArtifacts.MASK_FUSION_PLY)}
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -1327,6 +1335,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
     var showPhotoOverlay by remember { mutableStateOf(false) }
+    var foregroundEngine by remember { mutableStateOf(MaskEnginePolicy.CONSENSUS) }
+    var showMaskEngineChoices by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     var selectingEarlyObject by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
@@ -1495,8 +1505,39 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                             else "Select Object BEFORE Sparse 3D")
                     }
                     if(coordinator.earlyObjectSelected) {
-                        Text("Early object rectangles saved. Analyze Sparse 3D now to " +
-                            "produce a separate ROI-priority point cloud.")
+                        Text("Compare candidate object masks before 3D. Check the "+
+                            "actual silhouette in Photo Overlay; checkerboard can fool masks.")
+                        Box {
+                            OutlinedButton(onClick={showMaskEngineChoices=true},
+                                enabled=!coordinator.maskWorking) {
+                                Text("Foreground engine: "+foregroundEngine+" ▾")
+                            }
+                            DropdownMenu(expanded=showMaskEngineChoices,
+                                onDismissRequest={showMaskEngineChoices=false}) {
+                                for(engine in MaskEnginePolicy.engineNames) {
+                                    DropdownMenuItem(text={Text(engine)},onClick={
+                                        foregroundEngine=engine
+                                        showMaskEngineChoices=false
+                                    })
+                                }
+                            }
+                        }
+                        Button(onClick={
+                            coordinator.compareForegroundEngines(foregroundEngine)
+                        },enabled=!coordinator.maskWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.silhouetteWorking &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                            Text(if(coordinator.maskWorking)
+                                "Comparing segmentation masks..." else
+                                "Compare Foreground Mask Engines")
+                        }
+                        if(coordinator.maskWorking)LinearProgressIndicator(
+                            modifier=Modifier.fillMaxWidth())
+                        Text(coordinator.maskMessage)
+                        Text("The chosen foreground mask constrains ROI ORB matching. "+
+                            "The full scene remains available for camera positioning.")
                     }
                     Button(onClick = { coordinator.analyzeSparseTwoView() },
                         enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
