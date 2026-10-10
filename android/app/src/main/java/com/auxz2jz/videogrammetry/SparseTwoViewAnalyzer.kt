@@ -919,7 +919,7 @@ class SparseTwoViewAnalyzer {
 
 
     /**
-     * EXPERIMENTAL incremental multi-view: source pair plus up to 8 further
+     * EXPERIMENTAL incremental multi-view: source pair plus bounded sampled further
      * registered saved camera views. Each new XYZ point is reconstructed from
      * a fresh first-photo descriptor track, triangulated into the SAME local
      * baseline frame using a PnP-estimated additional camera pose.
@@ -961,7 +961,7 @@ class SparseTwoViewAnalyzer {
             .put("scale","UNKNOWN_ARBITRARY_BASELINE")
             .put("sameCoordinateSystemAsRoiTwoView",true)
             .put("sameCoordinateSystemAsFullScene",false)
-            .put("warning","Each new point is triangulated with its FIRST source photo and one registered extra view. No bundle adjustment or metric scale. Background inside user ROI may still be reconstructed. A higher count is not proof of shape.")
+            .put("warning","Additional sampled views are evaluated and registered to source-frame-0 ROI tracks when matching. This is NOT full use of every extracted photo or global SfM; no bundle adjustment or metric scale. Background inside ROI possible.")
             .put("status","IN_PROGRESS")
         run.event("OPERATION_START","OBJECT_MULTIVIEW",
             JSONObject().put("analysisId",id).put("extraViews",options.size))
@@ -973,8 +973,24 @@ class SparseTwoViewAnalyzer {
                 val first=features(checkedFile(run,frames,expected.first),orb,a)
                 try {
                     val second=features(checkedFile(run,frames,expected.second),orb,b)
+                    val scenePair=runCatching {
+                        JSONObject(File(run.directory,"sparse_report.json").readText())
+                            .getJSONObject("selectedPair")
+                    }.getOrNull()
+                    val reusable=scenePair?.takeIf {
+                        it.optInt("indexA",-1)==expected.first &&
+                            it.optInt("indexB",-1)==expected.second &&
+                            it.has("cameraPoseRotationRowMajor") &&
+                            it.has("cameraPoseTranslation")
+                    }
+                    out.put("cameraPoseStrategy",if(reusable!=null)
+                        "SAVED_FULL_SCENE_CAMERA_POSE"
+                        else "ROI_ONLY_ESTIMATE_NO_SHARED_POSE")
+                        .put("sameCoordinateSystemAsFullScene",reusable!=null)
                     val baseline=try {
-                        candidate(first,second,expected.first,expected.second)
+                        if(reusable!=null)candidateWithScenePose(first,second,
+                            expected.first,expected.second,reusable)
+                        else candidate(first,second,expected.first,expected.second)
                     } finally { second.release() }
                     val base=baseline.vertices
                     out.put("baselinePairVerdict",baseline.report.optString("verdict"))
