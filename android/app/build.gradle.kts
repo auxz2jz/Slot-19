@@ -12,8 +12,8 @@ android {
         applicationId = "com.auxz2jz.videogrammetry"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.11.0"
+        versionCode = 14
+        versionName = "0.12.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -31,7 +31,7 @@ android {
         // Give this experimental candidate a separate ID so testing never
         // requires uninstalling the user's verified v0.8.1 application/data.
         debug {
-            applicationIdSuffix = ".preview110"
+            applicationIdSuffix = ".preview120"
         }
         release {
             isMinifyEnabled = false
