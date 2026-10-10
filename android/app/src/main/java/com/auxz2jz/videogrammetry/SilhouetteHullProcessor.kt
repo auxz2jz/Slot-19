@@ -92,6 +92,15 @@ class SilhouetteHullProcessor {
         }.vertices.map {SparseVertex(it.x.toDouble(),it.y.toDouble(),it.z.toDouble(),
             it.r,it.g,it.b)}
         require(sparse.size>=24) { "Not enough ROI baseline geometry" }
+        require(input.optBoolean("sameCoordinateSystemAsRoiTwoView")) {
+            "Multi-view cloud and ROI baseline do not share coordinates"
+        }
+        val multiFile=File(run.directory,CloudArtifacts.MULTIVIEW_PLY)
+        require(multiFile.isFile) { "Missing registered multi-view cloud" }
+        val allTracks=multiFile.inputStream().use {
+            PlyParser.parse(it,"PnP-registered multi-view point cloud")
+        }.vertices.map{SparseVertex(it.x.toDouble(),it.y.toDouble(),it.z.toDouble(),
+            it.r,it.g,it.b)}
         val report=JSONObject().put("runId",run.id)
             .put("appVersion","android-"+BuildConfig.VERSION_NAME)
             .put("method","CAMERA_GUIDED_SEGMENTATION_AND_VOXEL_VISUAL_HULL")
@@ -166,7 +175,7 @@ class SilhouetteHullProcessor {
                 input.optBoolean("sameCoordinateSystemAsFullScene"))
             val voxel=if(valid)SilhouettePolicy.carveVoxels(sparse,masks)
                 else emptyList()
-            val sparseOut=if(valid)SilhouettePolicy.carveSparse(sparse,masks)
+            val sparseOut=if(valid)SilhouettePolicy.carveSparse(allTracks,masks)
                 else emptyList()
             val status=if(!valid)"INSUFFICIENT_TRACKED_MASK_VIEWS"
                 else if(voxel.size<20)"SILHOUETTE_GEOMETRY_INCONCLUSIVE"
@@ -185,6 +194,8 @@ class SilhouetteHullProcessor {
                 .put("cameraViewsWithMasks",masks.size)
                 .put("trackedPhotoResults",tracked)
                 .put("baselineSparsePoints",sparse.size)
+                .put("multiViewInputPoints",allTracks.size)
+                .put("fusionInputCoordinateFrame","SCENE_ALIGNED_ROI_LOCAL")
                 .put("retainedSparseObjectPoints",sparseOut.size)
                 .put("occupiedHullVoxelPoints",voxel.size)
                 .put("voxelResolutionPerAxis",SilhouettePolicy.GRID)
