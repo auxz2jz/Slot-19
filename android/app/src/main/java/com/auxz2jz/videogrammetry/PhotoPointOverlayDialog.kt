@@ -92,12 +92,11 @@ fun PhotoPointOverlayDialog(run:ScanRun,
     var photoOpacity by remember { mutableFloatStateOf(.45f) }
     var pointSize by remember { mutableFloatStateOf(4f) }
     var showingChoices by remember { mutableStateOf(false) }
-    val loaded=remember(run.id,selection) {
-        runCatching {loader.load(run,selection)}.getOrNull()
+    val modelAttempt=remember(run.id,selection) {
+        runCatching { loader.load(run,selection) }
     }
-    val error=remember(run.id,selection) {
-        runCatching { loader.load(run,selection) }.exceptionOrNull()?.javaClass?.simpleName
-    }
+    val loaded=modelAttempt.getOrNull()
+    val error=modelAttempt.exceptionOrNull()?.javaClass?.simpleName
     DisposableEffect(viewer) { onDispose {viewer.release()} }
     val model=loaded
     val image=remember(run.id,selection,step) {
