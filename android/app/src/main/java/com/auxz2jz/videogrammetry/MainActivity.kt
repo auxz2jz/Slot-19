@@ -174,8 +174,13 @@ class CaptureCoordinator(private val activity: MainActivity) {
         private set
     var scenePoseAvailable by mutableStateOf(
         currentRun?.let {
-            runCatching {JSONObject(File(it.directory,"scene_camera_track_report.json")
-                .readText()).optBoolean("sceneAligned")}.getOrDefault(false)
+            runCatching {
+                val j=JSONObject(File(it.directory,"scene_camera_track_report.json")
+                    .readText())
+                j.optBoolean("sceneAligned") &&
+                    j.optString("status")=="SCENE_CAMERA_POSES_AVAILABLE" &&
+                    j.optInt("registeredExtraViews")>0
+            }.getOrDefault(false)
         } ?: false)
         private set
     var scenePoseWorking by mutableStateOf(false)
@@ -277,6 +282,10 @@ class CaptureCoordinator(private val activity: MainActivity) {
             geometryAnalyzing -> "ORB_GEOMETRY"
             sparseAnalyzing -> "SPARSE_3D"
             thirdViewAnalyzing -> "THIRD_VIEW"
+            scenePoseWorking -> "SCENE_CAMERA_REGISTRATION"
+            maskWorking -> "FOREGROUND_MASK_COMPARISON"
+            silhouetteWorking -> "SILHOUETTE_HULL"
+            multiviewWorking -> "OBJECT_MULTIVIEW"
             objectFocusWorking -> "OBJECT_FOCUS"
             liveSampling -> "LIVE_CAMERA"
             smartSampling -> "SMART_CAMERA"
@@ -687,8 +696,11 @@ class CaptureCoordinator(private val activity: MainActivity) {
             multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
             maskReady = File(run.directory,"foreground_mask_report.json").isFile
             scenePoseAvailable = runCatching {
-                JSONObject(File(run.directory,"scene_camera_track_report.json")
-                    .readText()).optBoolean("sceneAligned")
+                val j=JSONObject(File(run.directory,"scene_camera_track_report.json")
+                    .readText())
+                j.optBoolean("sceneAligned") &&
+                    j.optString("status")=="SCENE_CAMERA_POSES_AVAILABLE" &&
+                    j.optInt("registeredExtraViews")>0
             }.getOrDefault(false)
             silhouetteReady = File(run.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
             fusionReady = File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
