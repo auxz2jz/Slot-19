@@ -1340,7 +1340,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
     var showPhotoOverlay by remember { mutableStateOf(false) }
-    var foregroundEngine by remember { mutableStateOf(MaskEnginePolicy.CONSENSUS) }
+    var showMaskPreview by remember { mutableStateOf(false) }
+    var foregroundEngine by remember { mutableStateOf(MaskEnginePolicy.GRABCUT) }
     var showMaskEngineChoices by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     var selectingEarlyObject by remember { mutableStateOf(false) }
@@ -1541,6 +1542,11 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                         if(coordinator.maskWorking)LinearProgressIndicator(
                             modifier=Modifier.fillMaxWidth())
                         Text(coordinator.maskMessage)
+                        Button(onClick={showMaskPreview=true},
+                            enabled=coordinator.maskReady &&
+                                !coordinator.maskWorking && !coordinator.importing) {
+                            Text("Inspect Masks on Full-Size Original Photos")
+                        }
                         Text("The chosen foreground mask constrains ROI ORB matching. "+
                             "The full scene remains available for camera positioning.")
                     }
@@ -1880,6 +1886,10 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                 if(selectingEarlyObject) coordinator.saveEarlyObjectFocus(first,second)
                 else coordinator.applyObjectFocus(first,second)
             })
+    }
+
+    if(showMaskPreview && latest!=null) {
+        MaskPreviewDialog(run=latest,onDismiss={showMaskPreview=false})
     }
 
     if(showPhotoOverlay && latest!=null) {
