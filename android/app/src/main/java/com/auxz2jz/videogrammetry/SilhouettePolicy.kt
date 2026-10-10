@@ -51,7 +51,8 @@ object SilhouettePolicy {
     }
     fun carveVoxels(baseline:List<SparseVertex>,masks:List<VoxelMask>,
         silhouetteBounds:VoxelBounds?=null):List<SparseVertex> {
-        if(!validMasks(masks.size,true) || baseline.size<24)return emptyList()
+        if(!validMasks(masks.size,true) ||
+            (baseline.size<24 && silhouetteBounds?.valid()!=true))return emptyList()
         fun ext(values:List<Double>):Pair<Double,Double> {
             val sorted=values.sorted()
             val lo=sorted[(sorted.size*.05).toInt().coerceIn(0,sorted.lastIndex)]
