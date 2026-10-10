@@ -97,7 +97,9 @@ class ObjectMaskProcessor {
                 } finally {m.release()}
                 reports.put(JSONObject().put("engine",engine).put("foregroundPixels",n)
                     .put("roiAreaPixels",roiArea).put("coverage",n.toDouble()/roiArea)
-                    .put("areaQualityValid",MaskEnginePolicy.acceptable(n,roiArea)))
+                    .put("areaQualityValid",
+                        if(engine==MaskEnginePolicy.BOX) roiArea>=100
+                        else MaskEnginePolicy.acceptable(n,roiArea)))
             }
             return JSONObject().put("frame",index)
                 .put("maskWidth",cols).put("maskHeight",rgb.rows())
