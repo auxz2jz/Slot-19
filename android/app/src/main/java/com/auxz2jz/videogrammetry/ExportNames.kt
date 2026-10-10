@@ -47,6 +47,16 @@ object ExportNames {
         "Android-" + normalizedVersion(versionName) + "-object-reconstruction-" +
             checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
 
+    fun silhouetteHullPly(versionName: String, runId: String,
+        timeUtcMs: Long = System.currentTimeMillis()):String =
+        "Android-" + normalizedVersion(versionName) + "-silhouette-voxel-hull-" +
+            checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
+
+    fun maskFusionPly(versionName: String, runId: String,
+        timeUtcMs: Long = System.currentTimeMillis()):String =
+        "Android-" + normalizedVersion(versionName) + "-mask-consistent-sparse-" +
+            checkedRunId(runId) + "-" + timestamp(timeUtcMs) + ".ply"
+
     fun multiviewPly(versionName: String, runId: String,
         timeUtcMs: Long = System.currentTimeMillis()): String =
         "Android-" + normalizedVersion(versionName) + "-object-multi-view-" +

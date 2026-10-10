@@ -1,0 +1,25 @@
+package com.auxz2jz.videogrammetry
+import org.junit.Test
+import org.junit.Assert.*
+class SilhouettePolicyTest {
+ @Test fun threeRegisteredViewsRequired() {
+  assertFalse(SilhouettePolicy.validMasks(2,true))
+  assertFalse(SilhouettePolicy.validMasks(5,false))
+  assertTrue(SilhouettePolicy.validMasks(3,true))
+ }
+ @Test fun voxelsNeedConsistentCameraProjectionsAndMasks() {
+  val c=VoxelCamera.anchor(0,100,100)
+  assertEquals(.5,c.project(0.0,0.0,1.0)!!.first,.02)
+  assertNull(c.project(0.0,0.0,-1.0))
+  val pixels=ByteArray(10000){255.toByte()}
+  val full=VoxelMask(c,pixels,100,100)
+  assertTrue(full.contains(0.0,0.0,1.0))
+  assertFalse(full.contains(0.0,0.0,-1.0))
+  val points=listOf(SparseVertex(0.0,0.0,1.0,1,2,3))
+  assertEquals(1,SilhouettePolicy.carveSparse(points,listOf(full,full,full)).size)
+  assertTrue(SilhouettePolicy.carveSparse(points,listOf(full,full)).isEmpty())
+ }
+ @Test fun voxelBudgetBounded() {
+  assertEquals(21952,SilhouettePolicy.MAX_VOXELS)
+ }
+}

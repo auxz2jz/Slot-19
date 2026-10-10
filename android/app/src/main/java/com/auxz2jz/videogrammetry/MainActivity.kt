@@ -172,6 +172,23 @@ class CaptureCoordinator(private val activity: MainActivity) {
     var multiviewAvailable by mutableStateOf(
         currentRun?.let { File(it.directory,CloudArtifacts.MULTIVIEW_PLY).isFile() } ?: false)
         private set
+    var maskReady by mutableStateOf(
+        currentRun?.let { File(it.directory,"foreground_mask_report.json").isFile } ?: false)
+        private set
+    var maskWorking by mutableStateOf(false)
+        private set
+    var maskMessage by mutableStateOf("Compare segmentation engines to separate object from checkerboard")
+        private set
+    var silhouetteReady by mutableStateOf(
+        currentRun?.let {File(it.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile} ?: false)
+        private set
+    var fusionReady by mutableStateOf(
+        currentRun?.let {File(it.directory,CloudArtifacts.MASK_FUSION_PLY).isFile} ?: false)
+        private set
+    var silhouetteWorking by mutableStateOf(false)
+        private set
+    var silhouetteMessage by mutableStateOf("Silhouette voxel prototype not run yet")
+        private set
     var multiviewWorking by mutableStateOf(false)
         private set
     var multiviewProgress by mutableStateOf(0f)
@@ -656,6 +673,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             objectFocusAvailable = File(run.directory,CloudArtifacts.FILTERED_SCENE_PLY).isFile()
             reconstructedAvailable = File(run.directory,CloudArtifacts.ROI_RECONSTRUCTED_PLY).isFile()
             multiviewAvailable = File(run.directory,CloudArtifacts.MULTIVIEW_PLY).isFile()
+            maskReady = File(run.directory,"foreground_mask_report.json").isFile
+            silhouetteReady = File(run.directory,CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
+            fusionReady = File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
             objectFocusMessage = "Select object regions after sparse analysis"
             savedClouds = repository.savedPlyEntries()
             sparseMessage = "No sparse two-view analysis for this capture"
@@ -734,6 +754,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
         objectFocusAvailable = false
         reconstructedAvailable = false
         multiviewAvailable = false
+        silhouetteReady = false
+        fusionReady = false
         sparseProgress = 0f
         sparseMessage = "Testing bounded two-view camera poses..."
         geometryWorker.execute {
@@ -877,6 +899,9 @@ class CaptureCoordinator(private val activity: MainActivity) {
             earlyObjectSelected=true
             reconstructedAvailable=false
             multiviewAvailable=false
+            maskReady=false
+            silhouetteReady=false
+            fusionReady=false
             savedClouds=repository.savedPlyEntries()
             objectFocusMessage="Object marked in both photos BEFORE 3D. Tap Analyze Sparse 3D for a new ROI-first model, then run registered multi-view."
             status="Early object boxes saved for frames "+
@@ -934,9 +959,81 @@ class CaptureCoordinator(private val activity: MainActivity) {
         }
     }
 
+    fun compareForegroundEngines(engine:String) {
+        val run=currentRun ?: return
+        if(!run.isClosed || !earlyObjectSelected) {
+            maskMessage="Select the object in BOTH real source photos first"
+            return
+        }
+        if(maskWorking || silhouetteWorking || multiviewWorking ||
+            sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            calibrating || importing || liveSampling || smartSampling) {
+            maskMessage="Finish the current processing step first"
+            return
+        }
+        maskWorking=true
+        maskMessage="Comparing Rectangle, GrabCut, low-texture and consensus on two photos..."
+        geometryWorker.execute {
+            try {
+                val report=ObjectMaskProcessor().compare(run,engine)
+                ui {
+                    maskReady=report.optBoolean("bothPhotosContainAcceptableMask")
+                    silhouetteReady=false;fusionReady=false
+                    maskMessage=report.optString("status")+": selected "+engine+
+                        ". Check the orange masks against the actual object in Photo Overlay. "+
+                        "Wrong mask = wrong 3D, regardless of point count."
+                    status="Segmentation engines compared; now rerun Analyze Sparse 3D "+
+                        "to apply mask-constrained feature detection."
+                }
+            } catch(ex:Exception) {
+                ui {maskMessage="Mask comparison failed: "+ex.javaClass.simpleName+
+                    ". Previous 3D outputs kept; export diagnostics."}
+            } finally {ui{maskWorking=false}}
+        }
+    }
+
+    fun buildSilhouetteHull() {
+        val run=currentRun ?: return
+        if(!run.isClosed || !maskReady || !multiviewAvailable) {
+            silhouetteMessage="First select object, run mask engines, reconstruct "+
+                "ROI-first and Multi-View, then make silhouette"
+            return
+        }
+        if(maskWorking || silhouetteWorking || multiviewWorking ||
+            sparseAnalyzing || thirdViewAnalyzing || geometryAnalyzing ||
+            calibrating || importing || liveSampling || smartSampling) {
+            silhouetteMessage="Finish the current task first"
+            return
+        }
+        silhouetteWorking=true
+        silhouetteMessage="Tracking object masks into pose-registered photos "+
+            "and carving 28 x 28 x 28 voxel candidates..."
+        geometryWorker.execute {
+            try {
+                val report=SilhouetteHullProcessor().build(run)
+                ui {
+                    silhouetteReady=File(run.directory,
+                        CloudArtifacts.SILHOUETTE_HULL_PLY).isFile
+                    fusionReady=File(run.directory,CloudArtifacts.MASK_FUSION_PLY).isFile
+                    savedClouds=repository.savedPlyEntries()
+                    silhouetteMessage=report.optString("status")+": "+
+                        report.optInt("cameraViewsWithMasks")+" views with masks; "+
+                        report.optInt("occupiedHullVoxelPoints")+" possible occupied voxels; "+
+                        report.optInt("retainedSparseObjectPoints")+" mask-consistent sparse points. "+
+                        "This is NOT a calibrated mesh; inspect original masks."
+                    status="Silhouette and mask/sparse fusion comparison saved."
+                }
+            } catch(ex:Exception) {
+                ui {silhouetteMessage="Silhouette experiment failed: "+
+                    ex.javaClass.simpleName+". See diagnostic report; clouds untouched."}
+            } finally {ui{silhouetteWorking=false}}
+        }
+    }
+
     fun analyzeObjectMultiView() {
         val run=currentRun ?: return
-        if(multiviewWorking || sparseAnalyzing || thirdViewAnalyzing ||
+        if(multiviewWorking || maskWorking || silhouetteWorking ||
+            sparseAnalyzing || thirdViewAnalyzing ||
             objectFocusWorking || geometryAnalyzing || importing ||
             liveSampling || smartSampling || calibrating) {
             multiviewMessage="Finish the active operation first"
@@ -982,7 +1079,8 @@ class CaptureCoordinator(private val activity: MainActivity) {
 
     fun exportSeparateCloud(uri: Uri, name:String) {
         val run=currentRun ?: return
-        if(multiviewWorking || sparseAnalyzing || objectFocusWorking ||
+        if(multiviewWorking || silhouetteWorking || maskWorking ||
+            sparseAnalyzing || objectFocusWorking ||
             thirdViewAnalyzing || importing || liveSampling || smartSampling)return
         worker.execute {
             try {
@@ -1219,6 +1317,14 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri -> if(uri!=null)
         coordinator.exportSeparateCloud(uri,CloudArtifacts.MULTIVIEW_PLY) }
+    val silhouettePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) {uri->if(uri!=null)coordinator.exportSeparateCloud(
+        uri,CloudArtifacts.SILHOUETTE_HULL_PLY)}
+    val maskFusionPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) {uri->if(uri!=null)coordinator.exportSeparateCloud(
+        uri,CloudArtifacts.MASK_FUSION_PLY)}
     val historyPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri -> if (uri != null) coordinator.exportAllRuns(uri) }
@@ -1229,6 +1335,8 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
     var showGuide by remember { mutableStateOf(false) }
     var showCloudViewer by remember { mutableStateOf(false) }
     var showPhotoOverlay by remember { mutableStateOf(false) }
+    var foregroundEngine by remember { mutableStateOf(MaskEnginePolicy.CONSENSUS) }
+    var showMaskEngineChoices by remember { mutableStateOf(false) }
     var focusPhotos by remember { mutableStateOf<Pair<File,File>?>(null) }
     var selectingEarlyObject by remember { mutableStateOf(false) }
     val latest = coordinator.latestRun
@@ -1397,8 +1505,39 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                             else "Select Object BEFORE Sparse 3D")
                     }
                     if(coordinator.earlyObjectSelected) {
-                        Text("Early object rectangles saved. Analyze Sparse 3D now to " +
-                            "produce a separate ROI-priority point cloud.")
+                        Text("Compare candidate object masks before 3D. Check the "+
+                            "actual silhouette in Photo Overlay; checkerboard can fool masks.")
+                        Box {
+                            OutlinedButton(onClick={showMaskEngineChoices=true},
+                                enabled=!coordinator.maskWorking) {
+                                Text("Foreground engine: "+foregroundEngine+" ▾")
+                            }
+                            DropdownMenu(expanded=showMaskEngineChoices,
+                                onDismissRequest={showMaskEngineChoices=false}) {
+                                for(engine in MaskEnginePolicy.engineNames) {
+                                    DropdownMenuItem(text={Text(engine)},onClick={
+                                        foregroundEngine=engine
+                                        showMaskEngineChoices=false
+                                    })
+                                }
+                            }
+                        }
+                        Button(onClick={
+                            coordinator.compareForegroundEngines(foregroundEngine)
+                        },enabled=!coordinator.maskWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.silhouetteWorking &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                            Text(if(coordinator.maskWorking)
+                                "Comparing segmentation masks..." else
+                                "Compare Foreground Mask Engines")
+                        }
+                        if(coordinator.maskWorking)LinearProgressIndicator(
+                            modifier=Modifier.fillMaxWidth())
+                        Text(coordinator.maskMessage)
+                        Text("The chosen foreground mask constrains ROI ORB matching. "+
+                            "The full scene remains available for camera positioning.")
                     }
                     Button(onClick = { coordinator.analyzeSparseTwoView() },
                         enabled = latest != null && latest.isClosed && latest.frameCount >= 2 &&
@@ -1499,6 +1638,76 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
                     }, enabled=coordinator.multiviewAvailable &&
                         !coordinator.multiviewWorking) {
                         Text("Export Multi-View PLY — Experimental")
+                    }
+
+                    Text("Silhouette Engine — experimental object outline",
+                        style=MaterialTheme.typography.titleMedium)
+                    Text("Uses source-photo foreground masks and camera-guided masks "+
+                        "in registered extra views. Carves a coarse 28×28×28 voxel hull "+
+                        "and filters sparse XYZ by mask agreement. Needs THREE "+
+                        "plausible masked views; no accurate mesh or physical scale.")
+                    Button(onClick={coordinator.buildSilhouetteHull()},
+                        enabled=coordinator.maskReady && coordinator.multiviewAvailable &&
+                            !coordinator.silhouetteWorking && !coordinator.maskWorking &&
+                            !coordinator.multiviewWorking &&
+                            !coordinator.sparseAnalyzing &&
+                            !coordinator.importing && !coordinator.calibrating) {
+                        Text(if(coordinator.silhouetteWorking)
+                            "Tracking and carving silhouette..." else
+                            "Test Silhouette Visual Hull + Mask Fusion")
+                    }
+                    if(coordinator.silhouetteWorking)LinearProgressIndicator(
+                        modifier=Modifier.fillMaxWidth())
+                    Text(coordinator.silhouetteMessage)
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.SILHOUETTE_HULL_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    },enabled=coordinator.silhouetteReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("View Silhouette Voxel Hull — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {run->
+                            val name=ExportNames.silhouetteHullPly(
+                                BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("SILHOUETTE_HULL",name)
+                            silhouettePicker.launch(name)
+                        }
+                    },enabled=coordinator.silhouetteReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("Export Silhouette Voxel PLY")
+                    }
+                    Button(onClick={
+                        coordinator.refreshClouds()
+                        val chosen=coordinator.savedClouds.firstOrNull {
+                            it.runId==latest?.id &&
+                                it.file.name==CloudArtifacts.MASK_FUSION_PLY
+                        }
+                        if(chosen!=null) {
+                            coordinator.openSavedCloud(chosen)
+                            showCloudViewer=true
+                        }
+                    },enabled=coordinator.fusionReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("View Mask-Verified Sparse Points — 3D")
+                    }
+                    Button(onClick={
+                        coordinator.latestRun?.let {run->
+                            val name=ExportNames.maskFusionPly(
+                                BuildConfig.VERSION_NAME,run.id)
+                            coordinator.logExportName("MASK_FUSION",name)
+                            maskFusionPicker.launch(name)
+                        }
+                    },enabled=coordinator.fusionReady &&
+                        !coordinator.silhouetteWorking) {
+                        Text("Export Mask-Verified Sparse PLY")
                     }
 
                     Text("Filtered scene — legacy AFTER-reconstruction subset",
@@ -1733,7 +1942,15 @@ private fun CaptureScreen(coordinator: CaptureCoordinator) {
             "up to 300 saved images; progress may take minutes. Check number of attempted " +
             "photos, PnP camera registrations and newly triangulated points. " +
             "This is NOT global 300-image SfM or guaranteed 360-degree capture. " +
-            "16. Export latest and ALL diagnostics, report any unexpected gray button.") },
+            "16. v0.12: AFTER choosing the object, run Compare Foreground Mask Engines. " +
+            "Compare BOX_BASELINE, GRABCUT, LOW_TEXTURE and CONSENSUS in the Photo Overlay: " +
+            "orange should be on the object rather than the checkerboard. If not, record failure. " +
+            "17. Rerun Sparse 3D to apply the selected foreground mask to ROI ORB. " +
+            "Then run Multi-View for up to 300 photos; check accepted camera views and new XYZ. " +
+            "18. If scene-aligned multi-view is available, Test Silhouette Visual Hull + Mask Fusion. " +
+            "A coarse voxel hull needs at least three masks in camera-registered views. " +
+            "Inspect silhouette and mask-consistent sparse outputs separately, without claiming accurate mesh. " +
+            "19. Export latest and ALL diagnostics and distinct PLYs; compare against the actual object.") },
         confirmButton = {
             TextButton(onClick = { coordinator.recordTest(true); showGuide = false }) {
                 Text("Frames Look Correct")

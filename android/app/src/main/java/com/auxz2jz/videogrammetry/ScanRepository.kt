@@ -48,7 +48,11 @@ class ScanRepository(private val context: Context) {
                     Triple(CloudArtifacts.FILTERED_SCENE_PLY,
                         "Filtered scene · subset",CloudArtifacts.FILTERED_SCENE_REPORT),
                     Triple(CloudArtifacts.MULTIVIEW_PLY,
-                        "Object reconstruction · multi-view",CloudArtifacts.MULTIVIEW_REPORT))
+                        "Object reconstruction · multi-view",CloudArtifacts.MULTIVIEW_REPORT),
+                    Triple(CloudArtifacts.SILHOUETTE_HULL_PLY,
+                        "Silhouette · coarse voxel hull",CloudArtifacts.SILHOUETTE_REPORT),
+                    Triple(CloudArtifacts.MASK_FUSION_PLY,
+                        "Mask-verified sparse · fusion",CloudArtifacts.SILHOUETTE_REPORT))
                 variants.mapNotNull { (name,label,reportName) ->
                     val file=File(folder,name)
                     if(!file.isFile) return@mapNotNull null
@@ -57,6 +61,10 @@ class ScanRepository(private val context: Context) {
                         meta?.optInt("pointCount") ?: 0
                         else if(name==CloudArtifacts.MULTIVIEW_PLY)
                             meta?.optInt("totalPoints") ?: 0
+                        else if(name==CloudArtifacts.SILHOUETTE_HULL_PLY)
+                            meta?.optInt("occupiedHullVoxelPoints") ?: 0
+                        else if(name==CloudArtifacts.MASK_FUSION_PLY)
+                            meta?.optInt("retainedSparseObjectPoints") ?: 0
                         else meta?.optInt("objectCandidatePoints") ?: 0
                     SavedPlyEntry(folder.name,source+" / "+label,file,count)
                 }
@@ -85,7 +93,9 @@ class ScanRepository(private val context: Context) {
             "early_object_reconstruction_report.json",
             "early_object_reconstruction_last_failure.json",
             "object_multiview_report.json",
-            "object_multiview_last_failure.json")
+            "object_multiview_last_failure.json",
+            "foreground_mask_report.json","foreground_mask_last_failure.json",
+            "silhouette_hull_report.json","silhouette_hull_last_failure.json")
         val rows = JSONArray()
         val destination = context.contentResolver.openOutputStream(uri)
             ?: throw IllegalStateException("Cannot write history ZIP")
@@ -205,13 +215,18 @@ class ScanRepository(private val context: Context) {
     /** Independent reconstructed object / multi-view PLY exports. */
     fun exportSeparatePly(run: ScanRun, uri: Uri, name: String): Long {
         require(name in setOf(CloudArtifacts.ROI_RECONSTRUCTED_PLY,
-            CloudArtifacts.MULTIVIEW_PLY)) { "Only new reconstructed PLY variants permitted" }
+            CloudArtifacts.MULTIVIEW_PLY,CloudArtifacts.SILHOUETTE_HULL_PLY,
+            CloudArtifacts.MASK_FUSION_PLY)) { "Unknown reconstructed cloud type" }
         val cloud=File(run.directory,name)
         require(run.isClosed && cloud.isFile && cloud.length()>150) {
             "Requested reconstructed point cloud is unavailable"
         }
-        val category=if(name==CloudArtifacts.ROI_RECONSTRUCTED_PLY)
-            "ROI_RECONSTRUCTED_PLY" else "OBJECT_MULTIVIEW_PLY"
+        val category=when(name) {
+            CloudArtifacts.ROI_RECONSTRUCTED_PLY -> "ROI_RECONSTRUCTED_PLY"
+            CloudArtifacts.MULTIVIEW_PLY -> "OBJECT_MULTIVIEW_PLY"
+            CloudArtifacts.SILHOUETTE_HULL_PLY -> "SILHOUETTE_HULL_PLY"
+            else -> "MASK_FUSION_PLY"
+        }
         run.event("USER_ACTION","EXPORT_"+category,
             JSONObject().put("fileKind",name).put("bytes",cloud.length()))
         try {
@@ -262,7 +277,9 @@ class ScanRepository(private val context: Context) {
             "early_object_reconstruction_report.json",
             "early_object_reconstruction_last_failure.json",
             "object_multiview_report.json",
-            "object_multiview_last_failure.json")
+            "object_multiview_last_failure.json",
+            "foreground_mask_report.json","foreground_mask_last_failure.json",
+            "silhouette_hull_report.json","silhouette_hull_last_failure.json")
         var total = 0L
         try {
             val output = context.contentResolver.openOutputStream(uri)

@@ -24,13 +24,15 @@ import kotlin.math.min
 class SourcePhotoOverlayView(ctx:Context): View(ctx) {
     private var bitmap:Bitmap?=null
     private var fileName:String?=null
+    private var maskName:String?=null
+    private var maskPixels:android.graphics.Bitmap?=null
     private var positions:List<PhotoPoint> = emptyList()
     var photoOpacity:Float=0.40f
         set(value) { field=value.coerceIn(0f,1f); invalidate() }
     var dotRadius:Float=5f
         set(value) { field=value.coerceIn(1f,18f);invalidate() }
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
-    fun showPhoto(file:File,coords:List<PhotoPoint>) {
+    fun showPhoto(file:File,coords:List<PhotoPoint>,maskFile:File?=null) {
         if(fileName!=file.absolutePath) {
             val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
             BitmapFactory.decodeFile(file.absolutePath,bounds)
@@ -43,6 +45,27 @@ class SourcePhotoOverlayView(ctx:Context): View(ctx) {
             bitmap?.recycle()
             bitmap=loaded
             fileName=file.absolutePath
+        }
+        val path=maskFile?.absolutePath
+        if(maskName!=path) {
+            maskPixels?.recycle()
+            maskPixels=null
+            maskName=path
+            if(maskFile!=null && maskFile.isFile) {
+                val source=BitmapFactory.decodeFile(maskFile.absolutePath)
+                if(source!=null) {
+                    try {
+                        val colors=IntArray(source.width*source.height)
+                        source.getPixels(colors,0,source.width,0,0,source.width,source.height)
+                        for(i in colors.indices) colors[i]=
+                            if(Color.red(colors[i])>127)
+                                Color.argb(120,255,155,0) else Color.TRANSPARENT
+                        maskPixels=android.graphics.Bitmap.createBitmap(colors,
+                            source.width,source.height,
+                            android.graphics.Bitmap.Config.ARGB_8888)
+                    } finally {source.recycle()}
+                }
+            }
         }
         positions=coords
         invalidate()
@@ -61,6 +84,10 @@ class SourcePhotoOverlayView(ctx:Context): View(ctx) {
         paint.alpha=(photoOpacity*255).toInt()
         canvas.drawBitmap(photo,null,target,paint)
         paint.alpha=255
+        maskPixels?.let {orange ->
+            paint.color=Color.WHITE
+            canvas.drawBitmap(orange,null,target,paint)
+        }
         val r=dotRadius*resources.displayMetrics.density
         for(point in positions) {
             val x=target.left+target.width()*point.x
@@ -71,7 +98,10 @@ class SourcePhotoOverlayView(ctx:Context): View(ctx) {
             canvas.drawCircle(x,y,r,paint)
         }
     }
-    fun release() {bitmap?.recycle();bitmap=null;fileName=null}
+    fun release() {
+        bitmap?.recycle();bitmap=null;fileName=null
+        maskPixels?.recycle();maskPixels=null;maskName=null
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,6 +122,9 @@ fun PhotoPointOverlayDialog(run:ScanRun,
     var photoOpacity by remember { mutableFloatStateOf(.45f) }
     var pointSize by remember { mutableFloatStateOf(4f) }
     var showingChoices by remember { mutableStateOf(false) }
+    var showMask by remember { mutableStateOf(false) }
+    var maskEngine by remember { mutableStateOf(MaskEnginePolicy.CONSENSUS) }
+    var showMaskChoices by remember { mutableStateOf(false) }
     val modelAttempt=remember(run.id,selection) {
         runCatching { loader.load(run,selection) }
     }
@@ -99,6 +132,15 @@ fun PhotoPointOverlayDialog(run:ScanRun,
     val error=modelAttempt.exceptionOrNull()?.javaClass?.simpleName
     DisposableEffect(viewer) { onDispose {viewer.release()} }
     val model=loaded
+    val selectedSource=if(model==null) -1 else if(step==0)
+        model.sourceIndices.first else model.sourceIndices.second
+    val reportMask=remember(run.id,selectedSource) {
+        if(selectedSource<0)null else
+            ObjectMaskProcessor().activeMask(run,selectedSource)
+    }
+    val maskPath=if(showMask && reportMask!=null)
+        ObjectMaskProcessor().maskFile(run,selectedSource,maskEngine).takeIf{it.isFile}
+        else null
     val image=remember(run.id,selection,step) {
         if(model==null)null
         else runCatching { loader.sourceFile(run,if(step==0)
@@ -148,7 +190,7 @@ fun PhotoPointOverlayDialog(run:ScanRun,
                         style=MaterialTheme.typography.bodySmall)
                     AndroidView(factory={viewer},modifier=Modifier.fillMaxWidth().weight(1f),
                         update={v ->
-                            v.showPhoto(image,if(step==0)model.pointsA else model.pointsB)
+                            v.showPhoto(image,if(step==0)model.pointsA else model.pointsB,maskPath)
                             v.photoOpacity=photoOpacity
                             v.dotRadius=pointSize
                         })
@@ -159,6 +201,26 @@ fun PhotoPointOverlayDialog(run:ScanRun,
                             ". Run sparse analysis again to save aligned features.")
                     }
                 }
+                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Checkbox(checked=showMask,
+                        onCheckedChange={showMask=it},enabled=reportMask!=null)
+                    Text("Orange = candidate object mask",modifier=Modifier.weight(1f))
+                }
+                Box {
+                    OutlinedButton(onClick={showMaskChoices=true},
+                        enabled=reportMask!=null) {Text("View Mask Engine: "+maskEngine+" ▾")}
+                    DropdownMenu(expanded=showMaskChoices,
+                        onDismissRequest={showMaskChoices=false}) {
+                        for(engine in MaskEnginePolicy.engineNames)
+                            DropdownMenuItem(text={Text(engine)},onClick={
+                                maskEngine=engine;showMaskChoices=false;showMask=true
+                            })
+                    }
+                }
+                if(reportMask==null)
+                    Text("No valid foreground-mask comparison saved for this photo. "+
+                        "Select object and run Compare Foreground Mask Engines first.",
+                        style=MaterialTheme.typography.bodySmall)
                 Text("Photo opacity: "+(photoOpacity*100).toInt()+"%")
                 Slider(value=photoOpacity,onValueChange={photoOpacity=it},
                     valueRange=0f..1f)
